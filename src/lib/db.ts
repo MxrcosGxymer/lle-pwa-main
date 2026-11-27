@@ -115,6 +115,11 @@ export interface MatchRow {
 	venue_name: string | null;
 	venue_short: string | null;
 	venue_maps: string | null;
+	live_home_score?: number | null;
+	live_away_score?: number | null;
+	live_period?: number | null;
+	live_clock_ms?: number | null;
+	live_updated_at?: string | null;
 }
 
 async function matchesQuery(where = '', orderBy = '', bind: unknown[] = []): Promise<MatchRow[]> {
@@ -125,17 +130,56 @@ async function matchesQuery(where = '', orderBy = '', bind: unknown[] = []): Pro
 			        m.home_team_id AS home_id, m.away_team_id AS away_id, m.forfeit_team_id,
 			        ht.name AS home_team, ht.short_name AS home_short,
 			        at.name AS away_team, at.short_name AS away_short,
-			        v.name AS venue_name, v.short_name AS venue_short, v.maps_url AS venue_maps
+			        v.name AS venue_name, v.short_name AS venue_short, v.maps_url AS venue_maps,
+			        lm.home_score AS live_home_score, lm.away_score AS live_away_score,
+			        lm.period AS live_period, lm.clock_ms AS live_clock_ms,
+			        lm.updated_at AS live_updated_at
 			 FROM matches m
 			 JOIN teams ht ON ht.id = m.home_team_id
 			 JOIN teams at ON at.id = m.away_team_id
 			 LEFT JOIN venues v ON v.id = m.venue_id
+			 LEFT JOIN live_matches lm ON lm.match_id = m.id
 			 ${where}
 			 ${orderBy}`,
 		)
 		.bind(...bind)
 		.all();
 	return res.results as unknown as MatchRow[];
+}
+
+export interface LiveMatchRow {
+	match_id: number;
+	home_score: number;
+	away_score: number;
+	period: number;
+	clock_ms: number;
+	shot_sec: number | null;
+	home_q1: number | null;
+	home_q2: number | null;
+	home_q3: number | null;
+	home_q4: number | null;
+	away_q1: number | null;
+	away_q2: number | null;
+	away_q3: number | null;
+	away_q4: number | null;
+	home_ot1: number | null;
+	home_ot2: number | null;
+	home_ot3: number | null;
+	away_ot1: number | null;
+	away_ot2: number | null;
+	away_ot3: number | null;
+	pbp_json: string | null;
+	stats_json: string | null;
+	acta_game_id: string | null;
+	updated_at: string;
+}
+
+export async function getLiveMatch(matchId: number): Promise<LiveMatchRow | null> {
+	const row = (await getDb()
+		.prepare('SELECT * FROM live_matches WHERE match_id = ? LIMIT 1')
+		.bind(matchId)
+		.first()) as LiveMatchRow | null;
+	return row;
 }
 
 export function getWeekMatches(week: number): Promise<MatchRow[]> {

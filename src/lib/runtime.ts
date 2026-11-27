@@ -27,3 +27,7 @@ export function getMedia(): MediaStorage {
 export function getAdminUsersRaw(): string | undefined {
 	return (env as unknown as { ADMIN_USERS?: string }).ADMIN_USERS;
 }
+
+export function getActaSyncSecret(): string {
+	return (env as unknown as { ACTA_SYNC_SECRET?: string }).ACTA_SYNC_SECRET || 'lle-acta-sync-2026';
+}

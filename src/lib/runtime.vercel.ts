@@ -229,3 +229,7 @@ export function getMedia(): MediaStorage {
 export function getAdminUsersRaw(): string | undefined {
 	return process.env.ADMIN_USERS;
 }
+
+export function getActaSyncSecret(): string {
+	return process.env.ACTA_SYNC_SECRET || 'lle-acta-sync-2026';
+}

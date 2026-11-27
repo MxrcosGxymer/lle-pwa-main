@@ -7,13 +7,14 @@ import VenueLink from '../../components/VenueLink.astro';
 import MovedBadge from '../../components/MovedBadge.astro';
 import QuarterChart from '../../components/QuarterChart.astro';
 import type { BoxScoreRow } from '../../lib/db';
-import { getMatch, getMatchBoxScore } from '../../lib/db';
+import { getLiveMatch, getMatch, getMatchBoxScore } from '../../lib/db';
 import { MAX_FOULS } from '../../lib/validation/match-acta';
 import { formatDate, formatTime, formatTurno, isTbdVenue, movedLabel, teamOutcome, type TeamOutcome } from '../../lib/format';
 
 const rawId = Number(Astro.params.id);
 const match = Number.isNaN(rawId) ? null : await getMatch(rawId);
 const rows = match ? await getMatchBoxScore(rawId) : [];
+const live = match && match.status === 'scheduled' ? await getLiveMatch(rawId) : null;
 if (!match) Astro.response.status = 404;
 
 /**
@@ -202,7 +203,13 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 							/>
 						</a>
 					</div>
-					<ScoreBadge home={match.home_score} away={match.away_score} variant="hero" />
+					<div id="hero-score-wrap">
+						<ScoreBadge
+							home={live ? live.home_score : match.home_score}
+							away={live ? live.away_score : match.away_score}
+							variant="hero"
+						/>
+					</div>
 					<div class="flex min-w-0 flex-1 items-center justify-end gap-2 sm:justify-between">
 						<a href={`/equipos/${match.away_id}`} class="hidden sm:inline-flex">
 							<TeamBadge
@@ -226,9 +233,42 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 				</div>
 
 				{
+					match.status === 'scheduled' && (
+						<section
+							id="live-panel"
+							data-match-id={match.id}
+							data-home-name={match.home_team}
+							data-away-name={match.away_team}
+							class:list={['mt-4 space-y-4', !live && 'hidden']}
+						>
+							<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm">
+								<div class="flex items-center gap-2 font-semibold text-red-700">
+									<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
+									<span>EN DIRECTO</span>
+									<span id="live-period" class="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">
+										{live ? (live.period > 4 ? `PR${live.period - 4}` : `Q${live.period}`) : 'Q1'}
+									</span>
+									<span id="live-clock" class="font-mono text-base text-red-900">
+										{live ? `${String(Math.floor(live.clock_ms / 60000)).padStart(2, '0')}:${String(Math.floor((live.clock_ms % 60000) / 1000)).padStart(2, '0')}` : '10:00'}
+									</span>
+								</div>
+								<span class="text-xs text-red-600/80">Actualización automática desde el acta</span>
+							</div>
+							<div id="live-quarters" class="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm" />
+							<div id="live-boxscore" class="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0" />
+							<div id="live-pbp" class="hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm" />
+						</section>
+					)
+				}
+
+				{
 					rows.length === 0 ? (
 						<div
-							class="mt-6 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500"
+							id="empty-stats-banner"
+							class:list={[
+								'mt-6 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500',
+								live && 'hidden',
+							]}
 						>
 							Aún no hay estadísticas de jugadores para este partido
 						</div>
@@ -491,6 +531,123 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 			if (isPhoto) return;
 			if (target === dialog || target?.hasAttribute('data-acta-backdrop')) dialog.close();
 		});
+	}
+
+	const livePanel = document.getElementById('live-panel') as HTMLElement | null;
+	if (livePanel) {
+		const matchId = livePanel.dataset.matchId;
+		const homeName = livePanel.dataset.homeName || 'Local';
+		const awayName = livePanel.dataset.awayName || 'Visitante';
+		const heroWrap = document.getElementById('hero-score-wrap');
+		const emptyBanner = document.getElementById('empty-stats-banner');
+		const periodEl = document.getElementById('live-period');
+		const clockEl = document.getElementById('live-clock');
+		const quartersEl = document.getElementById('live-quarters');
+		const boxEl = document.getElementById('live-boxscore');
+		const pbpEl = document.getElementById('live-pbp');
+
+		const esc = (s: unknown) =>
+			String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
+
+		const fmtClock = (ms: number) => {
+			const sec = Math.max(0, Math.floor(ms / 1000));
+			return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+		};
+
+		const renderTeamTable = (title: string, list: any[]) => {
+			if (!list || !list.length) return '';
+			const rowsHtml = list
+				.map(
+					(p) => `<tr class="border-t border-gray-100">
+						<td class="px-3 py-2 text-left text-sm"><span class="mr-1.5 font-mono text-xs text-gray-400">#${esc(p.number)}</span>${esc(p.name)}</td>
+						<td class="px-2 py-2 text-right font-semibold">${p.points ?? 0}</td>
+						<td class="px-2 py-2 text-right text-gray-600">${p.fg2 ?? 0}</td>
+						<td class="px-2 py-2 text-right text-gray-600">${p.fg3 ?? 0}</td>
+						<td class="px-2 py-2 text-right text-gray-600">${p.ftm ?? 0}/${p.fta ?? 0}</td>
+						<td class="px-2 py-2 text-right text-gray-600">${p.fouls ?? 0}</td>
+					</tr>`,
+				)
+				.join('');
+			return `<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+				<h3 class="border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-semibold">${esc(title)}</h3>
+				<div class="overflow-x-auto"><table class="w-full text-sm">
+					<thead class="bg-gray-50/50 text-xs text-gray-500">
+						<tr><th class="px-3 py-2 text-left">Jugador</th><th class="px-2 py-2 text-right">P</th><th class="px-2 py-2 text-right">2P</th><th class="px-2 py-2 text-right">3P</th><th class="px-2 py-2 text-right">TL</th><th class="px-2 py-2 text-right">Fal</th></tr>
+					</thead>
+					<tbody>${rowsHtml}</tbody>
+				</table></div>
+			</section>`;
+		};
+
+		let wasLive = !livePanel.classList.contains('hidden');
+
+		const pollLive = async () => {
+			if (!matchId || document.hidden) return;
+			try {
+				const res = await fetch(`/api/live/${matchId}`, { cache: 'no-store' });
+				if (!res.ok) return;
+				const data = await res.json();
+
+				if (!data.live) {
+					if (data.status === 'finished' || data.status === 'forfeit' || wasLive) {
+						window.location.reload();
+					}
+					return;
+				}
+
+				wasLive = true;
+				livePanel.classList.remove('hidden');
+				emptyBanner?.classList.add('hidden');
+
+				if (heroWrap) {
+					const nums = heroWrap.querySelectorAll('span');
+					if (nums.length >= 2) {
+						nums[0].textContent = String(data.home_score ?? 0);
+						nums[nums.length - 1].textContent = String(data.away_score ?? 0);
+					}
+				}
+				if (periodEl) {
+					periodEl.textContent = data.period > 4 ? `PR${data.period - 4}` : `Q${data.period || 1}`;
+				}
+				if (clockEl) {
+					clockEl.textContent = fmtClock(Number(data.clock_ms ?? 0));
+				}
+
+				if (quartersEl && data.quarters) {
+					const labels = ['Q1', 'Q2', 'Q3', 'Q4', 'PR1', 'PR2', 'PR3'];
+					const maxIdx = Math.max(4, Number(data.period || 1));
+					const cols = labels.slice(0, Math.min(labels.length, maxIdx));
+					quartersEl.classList.remove('hidden');
+					quartersEl.innerHTML = `<table class="w-full text-center text-sm">
+						<thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Equipo</th>${cols.map((c) => `<th class="px-2 py-2">${c}</th>`).join('')}<th class="px-3 py-2 font-bold">Total</th></tr></thead>
+						<tbody>
+							<tr class="border-t border-gray-100"><td class="px-3 py-2 text-left font-medium">${esc(homeName)}</td>${cols.map((_, i) => `<td class="px-2 py-2">${data.quarters.home[i] ?? '–'}</td>`).join('')}<td class="px-3 py-2 font-bold">${data.home_score ?? 0}</td></tr>
+							<tr class="border-t border-gray-100"><td class="px-3 py-2 text-left font-medium">${esc(awayName)}</td>${cols.map((_, i) => `<td class="px-2 py-2">${data.quarters.away[i] ?? '–'}</td>`).join('')}<td class="px-3 py-2 font-bold">${data.away_score ?? 0}</td></tr>
+						</tbody>
+					</table>`;
+				}
+
+				if (boxEl && data.players) {
+					boxEl.innerHTML =
+						renderTeamTable(homeName, data.players.home || []) +
+						renderTeamTable(awayName, data.players.away || []);
+				}
+
+				if (pbpEl && Array.isArray(data.pbp) && data.pbp.length > 0) {
+					pbpEl.classList.remove('hidden');
+					pbpEl.innerHTML = `<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Últimas jugadas</h3>
+						<ul class="space-y-1 text-sm text-gray-700">${data.pbp
+							.slice(0, 8)
+							.map((ev: any) => `<li class="flex items-center justify-between gap-2 border-t border-gray-100 pt-1"><span>${esc(ev.txt || ev.text || ev.desc || '')}</span><span class="shrink-0 font-mono text-xs text-gray-400">${esc(ev.clk || ev.time || '')}</span></li>`)
+							.join('')}</ul>`;
+				}
+			} catch {
+				// Ignore transient network errors during polling
+			}
+		};
+
+		pollLive();
+		setInterval(pollLive, 3000);
 	}
 </script>
 

@@ -37,6 +37,12 @@ const timeLabel = (m: MatchRow) =>
 					]}
 				>
 					{timeLabel(m) && <span set:html={timeLabel(m)} />}
+					{m.status === 'scheduled' && m.live_home_score != null && (
+						<span class="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+							<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+							En directo · {m.live_period && m.live_period > 4 ? `PR${m.live_period - 4}` : `Q${m.live_period ?? 1}`}
+						</span>
+					)}
 					{movedLabel(m.original_date, m.date) && (
 						<MovedBadge originalDate={m.original_date} date={m.date} size="sm" />
 					)}
@@ -62,7 +68,11 @@ const timeLabel = (m: MatchRow) =>
 							return outcome && <ResultBadge variant={outcome} />;
 						})()}
 					</div>
-					<ScoreBadge home={m.home_score} away={m.away_score} variant="card" />
+					<ScoreBadge
+						home={m.status === 'scheduled' && m.live_home_score != null ? m.live_home_score : m.home_score}
+						away={m.status === 'scheduled' && m.live_away_score != null ? m.live_away_score : m.away_score}
+						variant="card"
+					/>
 					<div class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
 						{(() => {
 							const outcome = teamOutcome(m, 'away');
