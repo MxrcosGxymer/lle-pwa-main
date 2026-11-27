@@ -153,7 +153,7 @@ const initialPbp: PbpEvent[] = (() => {
 	if (!raw) return [];
 	try {
 		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? [...parsed].reverse() : [];
+		return Array.isArray(parsed) ? parsed : [];
 	} catch {
 		return [];
 	}
@@ -1211,7 +1211,7 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 				}
 
 				if (jugadasListEl && Array.isArray(data.pbp)) {
-					const plays = [...data.pbp].reverse();
+					const plays = data.pbp;
 					if (plays.length === 0) {
 						jugadasListEl.innerHTML =
 							'<p class="p-8 text-center text-sm text-gray-500">Aún no hay jugadas registradas para este partido.</p>';

@@ -182,7 +182,7 @@ export const POST: APIRoute = async ({ request }) => {
 				aq.ot1 ?? null,
 				aq.ot2 ?? null,
 				aq.ot3 ?? null,
-				body.pbp ? JSON.stringify(body.pbp.slice(-200)) : null,
+				body.pbp ? JSON.stringify(body.pbp.slice(0, 200)) : null,
 				body.players ? JSON.stringify(body.players) : null,
 				body.actaGameId ?? null,
 			)
@@ -229,7 +229,7 @@ export const POST: APIRoute = async ({ request }) => {
 					aq.ot2 ?? null,
 					aq.ot3 ?? null,
 					body.observations?.trim() || null,
-					body.pbp ? JSON.stringify(body.pbp.slice(-200)) : null,
+					body.pbp ? JSON.stringify(body.pbp.slice(0, 200)) : null,
 					matchId,
 				),
 			getDb().prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
