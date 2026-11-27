@@ -27,7 +27,10 @@ interface QuarterPayload {
 }
 
 interface ActaSyncPayload {
-	matchId: number;
+	matchId?: number | null;
+	week?: number | null;
+	homeTeam?: string;
+	awayTeam?: string;
 	mode: 'live' | 'final';
 	actaGameId?: string;
 	homeScore: number;
@@ -104,6 +107,49 @@ async function resolvePlayerId(
 	return created.id;
 }
 
+async function resolveMatchId(body: ActaSyncPayload): Promise<number | null> {
+	const explicitId = Number(body.matchId);
+	if (Number.isInteger(explicitId) && explicitId > 0) {
+		return explicitId;
+	}
+
+	const normHome = normalizeName(body.homeTeam || '');
+	const normAway = normalizeName(body.awayTeam || '');
+	if (!normHome || !normAway) return null;
+
+	const teamsRes = await getDb().prepare('SELECT id, name, short_name FROM teams').all();
+	const teams = teamsRes.results as { id: number; name: string; short_name: string }[];
+	const findTeamId = (norm: string) =>
+		teams.find((t) => normalizeName(t.name) === norm || normalizeName(t.short_name) === norm)?.id ?? null;
+
+	const homeId = findTeamId(normHome);
+	const awayId = findTeamId(normAway);
+	if (!homeId || !awayId) return null;
+
+	const week = Number(body.week);
+	if (Number.isInteger(week) && week > 0) {
+		const exact = (await getDb()
+			.prepare('SELECT id FROM matches WHERE week = ? AND home_team_id = ? AND away_team_id = ? LIMIT 1')
+			.bind(week, homeId, awayId)
+			.first()) as { id: number } | null;
+		if (exact) return exact.id;
+	}
+
+	const nextScheduled = (await getDb()
+		.prepare(
+			"SELECT id FROM matches WHERE home_team_id = ? AND away_team_id = ? AND status = 'scheduled' ORDER BY week ASC LIMIT 1",
+		)
+		.bind(homeId, awayId)
+		.first()) as { id: number } | null;
+	if (nextScheduled) return nextScheduled.id;
+
+	const anyMatch = (await getDb()
+		.prepare('SELECT id FROM matches WHERE home_team_id = ? AND away_team_id = ? ORDER BY week ASC LIMIT 1')
+		.bind(homeId, awayId)
+		.first()) as { id: number } | null;
+	return anyMatch?.id ?? null;
+}
+
 export const POST: APIRoute = async ({ request }) => {
 	const secret = getActaSyncSecret();
 	const headerSecret =
@@ -121,9 +167,9 @@ export const POST: APIRoute = async ({ request }) => {
 		return json({ error: 'JSON inválido' }, 400);
 	}
 
-	const matchId = Number(body.matchId);
-	if (!Number.isInteger(matchId) || matchId <= 0) {
-		return json({ error: 'matchId inválido' }, 400);
+	const matchId = await resolveMatchId(body);
+	if (!matchId) {
+		return json({ error: 'No se pudo emparejar el partido (revisa jornada y equipos)' }, 404);
 	}
 
 	const match = await getAdminMatch(matchId);
