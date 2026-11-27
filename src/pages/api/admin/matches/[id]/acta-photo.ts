@@ -1,5 +1,5 @@
-import { env } from 'cloudflare:workers';
 import type { APIRoute } from 'astro';
+import { getMedia } from '../../../../../lib/runtime';
 
 export const prerender = false;
 
@@ -47,7 +47,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 	const ts = Date.now();
 	const key = `actas/${matchId}-${ts}.${ext}`;
 
-	await env.MEDIA.put(key, file, {
+	await getMedia().put(key, file, {
 		httpMetadata: {
 			contentType: file.type,
 			cacheControl: 'public, max-age=31536000, immutable',

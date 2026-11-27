@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { getMedia } from '../../lib/runtime';
 
 export const prerender = false;
 
@@ -23,7 +23,7 @@ export const GET = async ({ params }: { params: Record<string, string | undefine
 		return new Response('Not Found', { status: 404 });
 	}
 
-	const object = await env.MEDIA.get(`actas/${file}`);
+	const object = await getMedia().get(`actas/${file}`);
 	if (object === null) {
 		return new Response('Not Found', { status: 404 });
 	}

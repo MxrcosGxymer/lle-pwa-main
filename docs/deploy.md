@@ -119,3 +119,53 @@ Mapeo de escudos (`teams.logo_url`), por id de equipo:
 
 Referencias: `migrations/0006_seed_team_logos.sql` (Emerge, Grayos) y
 `migrations/0009_seed_team_logos.sql` (Chino Hills, Ruskiñol, Totonto).
+
+## Despliegue alternativo en Vercel
+
+Cloudflare Workers sigue siendo el despliegue principal y por defecto (`pnpm run build` / `pnpm run deploy`).
+Cuando el proyecto se construye en Vercel (`VERCEL=1`, que Vercel define automáticamente, o en local con `DEPLOY_TARGET=vercel` / `pnpm run build:vercel`), [astro.config.mjs](../astro.config.mjs) cambia automáticamente al adaptador `@astrojs/vercel` y usa [src/lib/runtime.vercel.ts](../src/lib/runtime.vercel.ts) en lugar de `cloudflare:workers`.
+
+### Variables de entorno en Vercel
+
+Configura **una** de estas dos opciones de base de datos en **Project Settings → Environment Variables**:
+
+- **Opción A — Compartir la base de datos D1 principal de Cloudflare (sin duplicar datos):**
+  - `CLOUDFLARE_ACCOUNT_ID`: ID de tu cuenta Cloudflare
+  - `CLOUDFLARE_D1_DATABASE_ID`: `dc3dc314-c508-4a76-b919-6f92f86f891d` (o el ID de tu D1)
+  - `CLOUDFLARE_API_TOKEN`: Token de Cloudflare con permiso `D1:Edit`
+- **Opción B — Base de datos SQLite independiente en Turso (libSQL):**
+  - `TURSO_DATABASE_URL`: `libsql://<tu-db>.turso.io`
+  - `TURSO_AUTH_TOKEN`: token de Turso
+  - Aplica los ficheros `migrations/*.sql` en orden sobre la base de Turso.
+
+Para **imágenes (escudos y actas)**:
+- `BLOB_READ_WRITE_TOKEN`: activa **Vercel Blob** (permite tanto leer como subir fotos de actas desde `/admin`).
+- `MEDIA_BASE_URL` (opcional, solo lectura): p. ej. `https://lle-pwa.saulfdezcd.workers.dev` para servir los escudos y actas directamente desde el despliegue principal de Cloudflare si no usas Vercel Blob.
+
+Para **login de administración (`/admin`)**:
+- `ADMIN_USERS`: mismo JSON generado con `scripts/gen-users.mjs`.
+
+## Despliegue alternativo en Vercel
+
+Cloudflare Workers sigue siendo el despliegue principal y por defecto (`pnpm run build` / `pnpm run deploy`).
+Cuando el proyecto se construye en Vercel (`VERCEL=1`, que Vercel define automáticamente, o en local con `DEPLOY_TARGET=vercel` / `pnpm run build:vercel`), [astro.config.mjs](../astro.config.mjs) cambia automáticamente al adaptador `@astrojs/vercel` y usa [src/lib/runtime.vercel.ts](../src/lib/runtime.vercel.ts) en lugar de `cloudflare:workers`.
+
+### Variables de entorno en Vercel
+
+Configura **una** de estas dos opciones de base de datos en **Project Settings → Environment Variables**:
+
+- **Opción A — Compartir la base de datos D1 principal de Cloudflare (sin duplicar datos):**
+  - `CLOUDFLARE_ACCOUNT_ID`: ID de tu cuenta Cloudflare
+  - `CLOUDFLARE_D1_DATABASE_ID`: `dc3dc314-c508-4a76-b919-6f92f86f891d` (o el ID de tu D1)
+  - `CLOUDFLARE_API_TOKEN`: Token de Cloudflare con permiso `D1:Edit`
+- **Opción B — Base de datos SQLite independiente en Turso (libSQL):**
+  - `TURSO_DATABASE_URL`: `libsql://<tu-db>.turso.io`
+  - `TURSO_AUTH_TOKEN`: token de Turso
+  - Aplica los ficheros `migrations/*.sql` en orden sobre la base de Turso.
+
+Para **imágenes (escudos y actas)**:
+- `BLOB_READ_WRITE_TOKEN`: activa **Vercel Blob** (permite tanto leer como subir fotos de actas desde `/admin`).
+- `MEDIA_BASE_URL` (opcional, solo lectura): p. ej. `https://lle-pwa.saulfdezcd.workers.dev` para servir los escudos y actas directamente desde el despliegue principal de Cloudflare si no usas Vercel Blob.
+
+Para **login de administración (`/admin`)**:
+- `ADMIN_USERS`: mismo JSON generado con `scripts/gen-users.mjs`.

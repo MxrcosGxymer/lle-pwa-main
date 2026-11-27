@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { getMedia } from '../../lib/runtime';
 
 export const prerender = false;
 
@@ -23,18 +23,20 @@ export const GET = async ({ params }: { params: Record<string, string | undefine
 		return new Response('Not Found', { status: 404 });
 	}
 
-	const object = await env.MEDIA.get(`logos/${file}`);
+	const object = await getMedia().get(`logos/${file}`);
 	if (object === null) {
 		return new Response('Not Found', { status: 404 });
 	}
 
-	return new Response(object.body, {
-		headers: {
-			'Content-Type': contentType,
-			'Cache-Control': 'public, max-age=86400',
-			'X-Content-Type-Options': 'nosniff',
-			'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
-			'Content-Length': String(object.size),
-		},
-	});
+	const headers: Record<string, string> = {
+		'Content-Type': contentType,
+		'Cache-Control': 'public, max-age=86400',
+		'X-Content-Type-Options': 'nosniff',
+		'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+	};
+	if (object.size !== undefined) {
+		headers['Content-Length'] = String(object.size);
+	}
+
+	return new Response(object.body, { headers });
 };

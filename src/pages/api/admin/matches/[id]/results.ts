@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { env } from 'cloudflare:workers';
+import { getDb } from '../../../../../lib/runtime';
 import {
 	validateMatchResult,
 	type MatchResultInput,
@@ -64,7 +64,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 		const hs = result.homeScore;
 		const as_ = result.awayScore;
 		const statements = [
-			env.lle_pwa
+			getDb()
 				.prepare(
 					`UPDATE matches SET
 						status = 'finished', forfeit_team_id = NULL,
@@ -97,13 +97,13 @@ export const POST: APIRoute = async ({ params, request }) => {
 					body.acta_photo_key,
 					matchId,
 				),
-			env.lle_pwa.prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
+			getDb().prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
 		];
 
 		// Result only: keep the scoreline, leave statistics pending (none stored).
 		if (!body.resultOnly) {
 			const insertStat = (p: PlayerStatInput) =>
-				env.lle_pwa
+				getDb()
 					.prepare(
 						`INSERT INTO match_stats
 							(match_id, player_id, points, field_goals_made, three_pt_made,
@@ -125,13 +125,13 @@ export const POST: APIRoute = async ({ params, request }) => {
 			for (const p of body.away_stats) if (p.played) statements.push(insertStat(p));
 		}
 
-		await env.lle_pwa.batch(statements);
+		await getDb().batch(statements);
 	} else if (body.status === 'forfeit') {
 		const homeForfeits = body.forfeit_team_id === match.home_id;
 		const homeScore = homeForfeits ? 0 : 20;
 		const awayScore = homeForfeits ? 20 : 0;
 		const statements = [
-			env.lle_pwa
+			getDb()
 				.prepare(
 					`UPDATE matches SET
 						status = 'forfeit', forfeit_team_id = ?,
@@ -151,20 +151,20 @@ export const POST: APIRoute = async ({ params, request }) => {
 					body.acta_photo_key,
 					matchId,
 				),
-			env.lle_pwa.prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
+			getDb().prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
 		];
-		await env.lle_pwa.batch(statements);
+		await getDb().batch(statements);
 	} else {
 		// cancelled | postponed: wipe scores/stats, keep the photo/observations.
 		const statements = clearResultStatements(matchId);
 		statements.push(
-			env.lle_pwa
+			getDb()
 				.prepare(
 					`UPDATE matches SET status = ?, forfeit_team_id = NULL, observations = ?, acta_photo_key = ? WHERE id = ?`,
 				)
 				.bind(body.status, body.observations, body.acta_photo_key, matchId),
 		);
-		await env.lle_pwa.batch(statements);
+		await getDb().batch(statements);
 	}
 
 	await recomputeStandings();

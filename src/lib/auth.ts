@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { getAdminUsersRaw, getDb } from './runtime';
 
 export type Role = 'admin' | 'referee';
 
@@ -26,7 +26,7 @@ const LOCK_MS = 15 * 60 * 1000; // 15 minutes
 export const SESSION_COOKIE = 'lle_admin';
 
 function users(): UsersConfig {
-	const raw = (env as unknown as { ADMIN_USERS?: string }).ADMIN_USERS;
+	const raw = getAdminUsersRaw();
 	if (!raw) return {};
 	try {
 		return JSON.parse(raw) as UsersConfig;
@@ -94,7 +94,7 @@ function safeEqual(a: string, b: string): boolean {
 async function throttleStatus(
 	username: string,
 ): Promise<{ locked: boolean; failures: number }> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare('SELECT failures, locked_until FROM login_attempts WHERE username = ?')
 		.bind(username)
 		.first()) as { failures: number; locked_until: number | null } | null;
@@ -106,13 +106,13 @@ async function throttleStatus(
 
 async function recordFailure(username: string): Promise<void> {
 	const now = Date.now();
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare('SELECT failures FROM login_attempts WHERE username = ?')
 		.bind(username)
 		.first()) as { failures: number } | null;
 	const failures = (row?.failures ?? 0) + 1;
 	const lockedUntil = failures >= MAX_FAILURES ? now + LOCK_MS : null;
-	await env.lle_pwa
+	await getDb()
 		.prepare(
 			`INSERT INTO login_attempts (username, failures, locked_until) VALUES (?, ?, ?)
 			 ON CONFLICT(username) DO UPDATE SET failures = excluded.failures, locked_until = excluded.locked_until`,
@@ -122,7 +122,7 @@ async function recordFailure(username: string): Promise<void> {
 }
 
 async function clearFailures(username: string): Promise<void> {
-	await env.lle_pwa.prepare('DELETE FROM login_attempts WHERE username = ?').bind(username).run();
+	await getDb().prepare('DELETE FROM login_attempts WHERE username = ?').bind(username).run();
 }
 
 export type LoginResult =
@@ -158,7 +158,7 @@ export async function login(username: string, password: string): Promise<LoginRe
 export async function createSession(username: string): Promise<string> {
 	const token = randomToken();
 	const now = Math.floor(Date.now() / 1000);
-	await env.lle_pwa
+	await getDb()
 		.prepare(
 			`INSERT INTO admin_sessions (token, username, created_at, last_seen_at, expires_at)
 			 VALUES (?, ?, ?, ?, ?)`,
@@ -178,7 +178,7 @@ export async function verifySession(token: string | undefined): Promise<SessionI
 	if (!token) return { valid: false };
 	const now = Math.floor(Date.now() / 1000);
 
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			'SELECT username, created_at, expires_at FROM admin_sessions WHERE token = ?',
 		)
@@ -193,7 +193,7 @@ export async function verifySession(token: string | undefined): Promise<SessionI
 	if (!record) return { valid: false };
 
 	const newExpiry = Math.min(now + SESSION_IDLE, row.created_at + SESSION_MAX);
-	await env.lle_pwa
+	await getDb()
 		.prepare('UPDATE admin_sessions SET last_seen_at = ?, expires_at = ? WHERE token = ?')
 		.bind(now, newExpiry, token)
 		.run();
@@ -203,10 +203,10 @@ export async function verifySession(token: string | undefined): Promise<SessionI
 
 export async function destroySession(token: string | undefined): Promise<void> {
 	if (!token) return;
-	await env.lle_pwa.prepare('DELETE FROM admin_sessions WHERE token = ?').bind(token).run();
+	await getDb().prepare('DELETE FROM admin_sessions WHERE token = ?').bind(token).run();
 }
 
 export async function cleanupSessions(): Promise<void> {
 	const now = Math.floor(Date.now() / 1000);
-	await env.lle_pwa.prepare('DELETE FROM admin_sessions WHERE expires_at < ?').bind(now).run();
+	await getDb().prepare('DELETE FROM admin_sessions WHERE expires_at < ?').bind(now).run();
 }

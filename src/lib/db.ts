@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { getDb, type SqlStatement } from './runtime';
 
 export interface StandingRow {
 	position: number;
@@ -28,7 +28,7 @@ export interface FormMatchRow {
 
 export async function getStandings(limit = 0): Promise<StandingRow[]> {
 	const limitClause = limit > 0 ? `LIMIT ${Math.floor(limit)}` : '';
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT t.id, t.name, t.short_name, s.played, s.wins, s.losses, s.ties,
 			        s.points_for, s.points_against, s.points,
@@ -40,7 +40,7 @@ export async function getStandings(limit = 0): Promise<StandingRow[]> {
 		)
 		.all();
 
-	const mres = await env.lle_pwa
+	const mres = await getDb()
 		.prepare(
 			`SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score,
 			        m.status, m.forfeit_team_id
@@ -118,7 +118,7 @@ export interface MatchRow {
 }
 
 async function matchesQuery(where = '', orderBy = '', bind: unknown[] = []): Promise<MatchRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT m.id, m.week, m.date, m.time, m.home_score, m.away_score, m.status,
 			        m.original_date,
@@ -151,14 +151,14 @@ export function getAllMatches(): Promise<MatchRow[]> {
 }
 
 export async function getLatestWeek(): Promise<number | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare('SELECT MAX(week) AS week FROM matches')
 		.first()) as { week: number | null } | null;
 	return row?.week ?? null;
 }
 
 export async function getLastPlayedWeek(): Promise<number | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			"SELECT MAX(week) AS week FROM matches WHERE status IN ('finished', 'forfeit')",
 		)
@@ -167,7 +167,7 @@ export async function getLastPlayedWeek(): Promise<number | null> {
 }
 
 export async function getUpcomingWeek(afterWeek: number | null): Promise<number | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			afterWeek === null
 				? 'SELECT MIN(week) AS week FROM matches'
@@ -190,7 +190,7 @@ export interface TeamRow {
 }
 
 export async function getTeams(): Promise<TeamRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT t.id, t.name, t.short_name, t.logo_url,
 			        COALESCE(s.played, 0) AS played,
@@ -206,7 +206,7 @@ export async function getTeams(): Promise<TeamRow[]> {
 }
 
 export async function getTeam(id: number): Promise<TeamRow | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			`SELECT t.id, t.name, t.short_name, t.logo_url,
 			        COALESCE(s.played, 0) AS played,
@@ -239,7 +239,7 @@ export interface PlayerStatRow {
 }
 
 export async function getRoster(teamId: number): Promise<PlayerStatRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT p.id, p.name, p.number,
 			        COUNT(ms.id) AS games,
@@ -280,7 +280,7 @@ export interface PlayerLeaderRow {
 }
 
 export async function getPlayerLeaders(): Promise<PlayerLeaderRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT p.id, p.name, p.number,
 			        t.id AS team_id, t.name AS team_name,
@@ -343,7 +343,7 @@ export interface MatchDetail {
 }
 
 export async function getMatch(id: number): Promise<MatchDetail | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			`SELECT m.id, m.week, m.date, m.time, m.home_score, m.away_score, m.status,
 			        ht.id AS home_id, ht.name AS home_team, ht.short_name AS home_short,
@@ -385,7 +385,7 @@ export interface BoxScoreRow {
 }
 
 export async function getMatchBoxScore(matchId: number): Promise<BoxScoreRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT t.id AS team_id, t.name AS team_name, t.short_name AS team_short,
 			        p.id AS player_id, p.name AS player_name, p.number AS player_number,
@@ -415,7 +415,7 @@ export interface VenueRow {
 }
 
 export async function getVenues(): Promise<VenueRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare('SELECT id, name, short_name, maps_url FROM venues ORDER BY name COLLATE NOCASE')
 		.all();
 	return res.results as unknown as VenueRow[];
@@ -428,7 +428,7 @@ export interface SpecialDateRow {
 }
 
 export async function getSpecialDates(): Promise<SpecialDateRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare('SELECT date, type, detail FROM special_dates ORDER BY date')
 		.all();
 	return res.results as unknown as SpecialDateRow[];
@@ -488,7 +488,7 @@ const ADMIN_MATCH_COLUMNS = `
 	(SELECT COUNT(*) FROM match_stats ms WHERE ms.match_id = m.id) AS stat_count`;
 
 export async function getMatchesByWeek(week: number): Promise<AdminMatchRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT ${ADMIN_MATCH_COLUMNS}
 			 FROM matches m
@@ -504,7 +504,7 @@ export async function getMatchesByWeek(week: number): Promise<AdminMatchRow[]> {
 }
 
 export async function getAdminMatch(id: number): Promise<AdminMatchRow | null> {
-	const row = (await env.lle_pwa
+	const row = (await getDb()
 		.prepare(
 			`SELECT ${ADMIN_MATCH_COLUMNS}
 			 FROM matches m
@@ -529,7 +529,7 @@ export interface JornadaRow {
 }
 
 export async function getJornadas(): Promise<JornadaRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT week, MIN(date) AS first_date, MAX(date) AS last_date,
 			        COUNT(*) AS total,
@@ -551,7 +551,7 @@ export interface TeamPlayerRow {
 
 /** Roster ordered by dorsal (numeric), players without a number last. */
 export async function getTeamPlayers(teamId: number): Promise<TeamPlayerRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT id, name, number
 			 FROM players
@@ -574,7 +574,7 @@ export interface MatchStatRow {
 }
 
 export async function getMatchStats(matchId: number): Promise<MatchStatRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT player_id, points,
 			        field_goals_made AS fg2, three_pt_made AS fg3,
@@ -604,7 +604,7 @@ export async function getTeamConflicts(
 	awayId: number,
 	date: string,
 ): Promise<ConflictMatch[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT m.id, m.week, m.date, m.time,
 			        ht.name AS home_team, at.name AS away_team
@@ -636,13 +636,13 @@ export async function getVenueConflicts(
 ): Promise<ConflictMatch[]> {
 	if (!venueId || !time) return [];
 
-	const venue = (await env.lle_pwa
+	const venue = (await getDb()
 		.prepare('SELECT single_court FROM venues WHERE id = ?')
 		.bind(venueId)
 		.first()) as { single_court: number } | null;
 	if (!venue?.single_court) return [];
 
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT m.id, m.week, m.date, m.time,
 			        ht.name AS home_team, at.name AS away_team
@@ -663,7 +663,7 @@ export async function getAvailableRainDates(
 	awayId: number,
 	fromDate: string,
 ): Promise<SpecialDateRow[]> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT date, type, detail
 			 FROM special_dates
@@ -691,7 +691,7 @@ export async function applyScheduleChange(
 	matchId: number,
 	change: ScheduleChange,
 ): Promise<void> {
-	const current = (await env.lle_pwa
+	const current = (await getDb()
 		.prepare('SELECT date, original_date FROM matches WHERE id = ?')
 		.bind(matchId)
 		.first()) as { date: string; original_date: string | null } | null;
@@ -705,7 +705,7 @@ export async function applyScheduleChange(
 		original = null; // moved back to the original date: no badge
 	}
 
-	await env.lle_pwa
+	await getDb()
 		.prepare('UPDATE matches SET date = ?, time = ?, venue_id = ?, original_date = ? WHERE id = ?')
 		.bind(change.date, change.time, change.venue_id, original, matchId)
 		.run();
@@ -713,7 +713,7 @@ export async function applyScheduleChange(
 
 /** Recomputes the standings cache from every finished/forfeit match. */
 export async function recomputeStandings(): Promise<void> {
-	const res = await env.lle_pwa
+	const res = await getDb()
 		.prepare(
 			`SELECT home_team_id, away_team_id, home_score, away_score, status, forfeit_team_id
 			 FROM matches
@@ -802,20 +802,20 @@ export async function recomputeStandings(): Promise<void> {
 	}
 
 	const stmts = [...acc.entries()].map(([teamId, a]) =>
-		env.lle_pwa
+		getDb()
 			.prepare(
 				`UPDATE standings SET played = ?, wins = ?, losses = ?, ties = ?, points_for = ?, points_against = ?, points = ?
 				 WHERE team_id = ?`,
 			)
 			.bind(a.played, a.wins, a.losses, a.ties, a.pf, a.pa, a.points, teamId),
 	);
-	if (stmts.length) await env.lle_pwa.batch(stmts);
+	if (stmts.length) await getDb().batch(stmts);
 }
 
 /** Wipes the stored result of a match (scores, quarters, OT and player stats). */
-export function clearResultStatements(matchId: number): D1PreparedStatement[] {
+export function clearResultStatements(matchId: number): SqlStatement[] {
 	return [
-		env.lle_pwa
+		getDb()
 			.prepare(
 				`UPDATE matches SET
 					home_score = NULL, away_score = NULL,
@@ -826,6 +826,6 @@ export function clearResultStatements(matchId: number): D1PreparedStatement[] {
 				 WHERE id = ?`,
 			)
 			.bind(matchId),
-		env.lle_pwa.prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
+		getDb().prepare('DELETE FROM match_stats WHERE match_id = ?').bind(matchId),
 	];
 }
