@@ -9,7 +9,41 @@ import QuarterChart from '../../components/QuarterChart.astro';
 import type { BoxScoreRow } from '../../lib/db';
 import { getLiveMatch, getMatch, getMatchBoxScore } from '../../lib/db';
 import { MAX_FOULS } from '../../lib/validation/match-acta';
-import { formatDate, formatTime, formatTurno, isTbdVenue, movedLabel, teamOutcome, type TeamOutcome } from '../../lib/format';
+import {
+	formatDate,
+	formatTime,
+	formatTurno,
+	isTbdVenue,
+	movedLabel,
+	teamOutcome,
+	type TeamOutcome,
+} from '../../lib/format';
+
+interface LivePlayerStat {
+	number: string | number;
+	name: string;
+	points: number;
+	fg2: number;
+	fg3: number;
+	ftm: number;
+	fta: number;
+	fouls: number;
+}
+
+interface PbpEvent {
+	id?: string | number;
+	t?: number;
+	team?: string;
+	color?: string;
+	type?: string;
+	per?: number;
+	clk?: string;
+	icon?: string;
+	desc?: string;
+	txt?: string;
+	text?: string;
+	time?: string;
+}
 
 const rawId = Number(Astro.params.id);
 const match = Number.isNaN(rawId) ? null : await getMatch(rawId);
@@ -17,39 +51,115 @@ const rows = match ? await getMatchBoxScore(rawId) : [];
 const live = match && match.status === 'scheduled' ? await getLiveMatch(rawId) : null;
 if (!match) Astro.response.status = 404;
 
-/**
- * Unconfirmed venues show the turno label instead of the raw hour, since the
- * time is only a pre-structured slot until the admin confirms it. The label is
- * trusted HTML (superscript ordinal), so it is rendered with `set:html`.
- */
 const matchTimeLabel = match
 	? isTbdVenue(match.venue_maps)
 		? formatTurno(match.time) || formatTime(match.time)
 		: formatTime(match.time)
 	: '';
 
+const isLive = Boolean(live);
+const isFinished = match?.status === 'finished' || match?.status === 'forfeit';
+
+// Unified stats (live or finished) for Resumen (Jugador destacado) and Tiros
+const liveStats: { home: LivePlayerStat[]; away: LivePlayerStat[] } | null =
+	live?.stats_json ? JSON.parse(live.stats_json) : null;
+
 const homeRows = rows.filter((r) => r.team_id === match?.home_id);
 const awayRows = rows.filter((r) => r.team_id === match?.away_id);
 
-const homePeriods = [
-	match?.home_q1 ?? null,
-	match?.home_q2 ?? null,
-	match?.home_q3 ?? null,
-	match?.home_q4 ?? null,
-	match?.home_ot1 ?? null,
-	match?.home_ot2 ?? null,
-	match?.home_ot3 ?? null,
-];
-const awayPeriods = [
-	match?.away_q1 ?? null,
-	match?.away_q2 ?? null,
-	match?.away_q3 ?? null,
-	match?.away_q4 ?? null,
-	match?.away_ot1 ?? null,
-	match?.away_ot2 ?? null,
-	match?.away_ot3 ?? null,
-];
+const unifiedHomePlayers: LivePlayerStat[] = liveStats
+	? liveStats.home ?? []
+	: homeRows.map((r) => ({
+			number: r.player_number ?? '–',
+			name: r.player_name,
+			points: r.points,
+			fg2: r.fg,
+			fg3: r.three,
+			ftm: r.ft_made,
+			fta: r.ft_att,
+			fouls: r.fouls,
+		}));
+
+const unifiedAwayPlayers: LivePlayerStat[] = liveStats
+	? liveStats.away ?? []
+	: awayRows.map((r) => ({
+			number: r.player_number ?? '–',
+			name: r.player_name,
+			points: r.points,
+			fg2: r.fg,
+			fg3: r.three,
+			ftm: r.ft_made,
+			fta: r.ft_att,
+			fouls: r.fouls,
+		}));
+
+function pickBestPlayer(list: LivePlayerStat[]): LivePlayerStat | null {
+	if (!list.length) return null;
+	const sorted = [...list].sort((a, b) => {
+		if (b.points !== a.points) return b.points - a.points;
+		if (b.fg3 !== a.fg3) return b.fg3 - a.fg3;
+		if (b.fg2 !== a.fg2) return b.fg2 - a.fg2;
+		return a.fouls - b.fouls;
+	});
+	return sorted[0].points > 0 ? sorted[0] : sorted[0];
+}
+
+const bestHome = pickBestPlayer(unifiedHomePlayers);
+const bestAway = pickBestPlayer(unifiedAwayPlayers);
+const overallMvp =
+	bestHome && bestAway
+		? bestHome.points >= bestAway.points
+			? { ...bestHome, teamName: match?.home_team ?? '' }
+			: { ...bestAway, teamName: match?.away_team ?? '' }
+		: bestHome
+			? { ...bestHome, teamName: match?.home_team ?? '' }
+			: bestAway
+				? { ...bestAway, teamName: match?.away_team ?? '' }
+				: null;
+
+// Quarters (live or finished)
+const homePeriods = live
+	? [live.home_q1, live.home_q2, live.home_q3, live.home_q4, live.home_ot1, live.home_ot2, live.home_ot3]
+	: [
+			match?.home_q1 ?? null,
+			match?.home_q2 ?? null,
+			match?.home_q3 ?? null,
+			match?.home_q4 ?? null,
+			match?.home_ot1 ?? null,
+			match?.home_ot2 ?? null,
+			match?.home_ot3 ?? null,
+		];
+const awayPeriods = live
+	? [live.away_q1, live.away_q2, live.away_q3, live.away_q4, live.away_ot1, live.away_ot2, live.away_ot3]
+	: [
+			match?.away_q1 ?? null,
+			match?.away_q2 ?? null,
+			match?.away_q3 ?? null,
+			match?.away_q4 ?? null,
+			match?.away_ot1 ?? null,
+			match?.away_ot2 ?? null,
+			match?.away_ot3 ?? null,
+		];
 const hasQuarterScores = [...homePeriods, ...awayPeriods].some((v) => v != null);
+
+const periodLabels = ['Q1', 'Q2', 'Q3', 'Q4', 'PR1', 'PR2', 'PR3'];
+const otCount = [4, 5, 6].filter((i) => homePeriods[i] != null || awayPeriods[i] != null).length;
+const visibleQuarterCount = Math.max(4, live ? Math.min(7, live.period) : 4 + otCount);
+const visibleQuarterLabels = periodLabels.slice(0, visibleQuarterCount);
+
+// Play-by-play (live or saved on finished match)
+const initialPbp: PbpEvent[] = (() => {
+	const raw = live?.pbp_json || match?.pbp_json;
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? [...parsed].reverse() : [];
+	} catch {
+		return [];
+	}
+})();
+
+const hasMatchContent = isLive || isFinished || rows.length > 0 || hasQuarterScores || initialPbp.length > 0;
 
 const totals = (list: BoxScoreRow[]) =>
 	list.reduce(
@@ -64,6 +174,19 @@ const totals = (list: BoxScoreRow[]) =>
 		{ points: 0, fg: 0, three: 0, ft_made: 0, ft_att: 0, fouls: 0 },
 	);
 
+const liveTotals = (list: LivePlayerStat[]) =>
+	list.reduce(
+		(acc, r) => ({
+			points: acc.points + (r.points || 0),
+			fg2: acc.fg2 + (r.fg2 || 0),
+			fg3: acc.fg3 + (r.fg3 || 0),
+			ftm: acc.ftm + (r.ftm || 0),
+			fta: acc.fta + (r.fta || 0),
+			fouls: acc.fouls + (r.fouls || 0),
+		}),
+		{ points: 0, fg2: 0, fg3: 0, ftm: 0, fta: 0, fouls: 0 },
+	);
+
 const statHeader = ['P', '2P', '3P', 'TL', 'TLI', 'Fal'];
 const boxColumns = [
 	{ label: 'Jugador', align: 'text-left' },
@@ -76,9 +199,13 @@ const moved = match ? movedLabel(match.original_date, match.date) : null;
 const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 	const base = `truncate font-display uppercase tracking-wide ${align}`;
 	if (!outcome) return `${base} text-lg sm:text-3xl`;
-	if (outcome === 'win') return `${base} rounded-lg bg-emerald-100 px-3 py-1 text-xl text-emerald-700 sm:text-3xl`;
+	if (outcome === 'win')
+		return `${base} rounded-lg bg-emerald-100 px-3 py-1 text-xl text-emerald-700 sm:text-3xl`;
 	return `${base} rounded-lg bg-rose-100 px-3 py-1 text-xl text-rose-700 sm:text-3xl`;
 };
+
+const displayHomeScore = live ? live.home_score : match?.home_score ?? null;
+const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 ---
 
 <Layout
@@ -95,7 +222,16 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 >
 	{
 		match ? (
-			<div class="mx-auto max-w-5xl px-4 pt-4 pb-6">
+			<div
+				class="mx-auto max-w-5xl px-4 pt-4 pb-6"
+				id="match-page-root"
+				data-match-id={match.id}
+				data-match-status={match.status}
+				data-home-name={match.home_team}
+				data-away-name={match.away_team}
+				data-home-short={match.home_short}
+				data-away-short={match.away_short}
+			>
 				<div class="flex items-center justify-between gap-3 sm:hidden">
 					<div class="flex min-w-0 flex-col text-sm text-gray-500">
 						<a
@@ -108,21 +244,15 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 							Jornada {match.week}
 						</h1>
 						<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-							{match.time && (
-								<>
-									<span set:html={matchTimeLabel} />
-								</>
-							)}
+							{match.time && <span set:html={matchTimeLabel} />}
 							<span class="mr-1">{formatDate(match.date)}</span>
 							{match.venue_name && (
-								<>
-									<VenueLink
-										name={match.venue_name}
-										short={match.venue_short}
-										mapsUrl={match.venue_maps}
-										class="hover:text-[#79131f] hover:underline"
-									/>
-								</>
+								<VenueLink
+									name={match.venue_name}
+									short={match.venue_short}
+									mapsUrl={match.venue_maps}
+									class="hover:text-[#79131f] hover:underline"
+								/>
 							)}
 						</div>
 					</div>
@@ -136,9 +266,7 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 								shortName={match.home_short}
 							/>
 						</a>
-						<span class="font-display text-2xl text-black">
-							VS
-						</span>
+						<span class="font-display text-2xl text-black">VS</span>
 						<a href={`/equipos/${match.away_id}`} class="shrink-0">
 							<TeamBadge
 								bare
@@ -164,24 +292,19 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 					Jornada {match.week}
 				</h1>
 				<div class="mt-1 hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 sm:flex">
-					{match.time && (
-						<>
-							<span set:html={matchTimeLabel} />
-						</>
-					)}
+					{match.time && <span set:html={matchTimeLabel} />}
 					<span class="mr-2">{formatDate(match.date)}</span>
 					{match.venue_name && (
-						<>
-							<VenueLink
-								name={match.venue_name}
-								short={match.venue_short}
-								mapsUrl={match.venue_maps}
-								class="hover:text-[#79131f] hover:underline"
-							/>
-						</>
+						<VenueLink
+							name={match.venue_name}
+							short={match.venue_short}
+							mapsUrl={match.venue_maps}
+							class="hover:text-[#79131f] hover:underline"
+						/>
 					)}
 				</div>
 
+				{/* Hero scoreboard (always visible above tabs) */}
 				<div class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:gap-4 sm:p-5">
 					<div class="flex min-w-0 flex-1 items-center gap-2 sm:justify-between">
 						<a
@@ -238,252 +361,277 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 					</div>
 				</div>
 
-				{
-					match.status === 'scheduled' && (
-						<section
-							id="live-panel"
-							data-match-id={match.id}
-							data-home-name={match.home_team}
-							data-away-name={match.away_team}
-							class:list={['mt-4 space-y-4', !live && 'hidden']}
+				{/* Live status strip (visible when live, or dynamically revealed by poller) */}
+				{match.status === 'scheduled' && (
+					<div
+						id="live-banner"
+						class:list={[
+							'mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm',
+							!live && 'hidden',
+						]}
+					>
+						<div class="flex items-center gap-2 font-semibold text-red-700">
+							<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
+							<span>EN DIRECTO</span>
+							<span id="live-period" class="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">
+								{live ? (live.period > 4 ? `PR${live.period - 4}` : `Q${live.period}`) : 'Q1'}
+							</span>
+							<span id="live-clock" class="font-mono text-base text-red-900">
+								{live
+									? `${String(Math.floor(live.clock_ms / 60000)).padStart(2, '0')}:${String(Math.floor((live.clock_ms % 60000) / 1000)).padStart(2, '0')}`
+									: '10:00'}
+							</span>
+						</div>
+						<span class="text-xs text-red-600/80">Actualización automática desde el acta</span>
+					</div>
+				)}
+
+				{/* Empty state for scheduled matches not yet started */}
+				{!hasMatchContent && (
+					<div
+						id="empty-stats-banner"
+						class="mt-6 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500"
+					>
+						Aún no hay estadísticas de jugadores para este partido
+					</div>
+				)}
+
+				{/* Unified 3-tab view (Resumen · Tiros · Jugadas) for both Live and Finished */}
+				<div id="match-tabs-shell" class:list={['mt-5', !hasMatchContent && 'hidden']}>
+					<div
+						role="tablist"
+						aria-label="Secciones del partido"
+						class="grid grid-cols-3 gap-1 rounded-xl border border-gray-200 bg-gray-100 p-1"
+					>
+						<button
+							type="button"
+							role="tab"
+							data-match-tab="resumen"
+							aria-selected="true"
+							class="match-tab-btn rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#641B24] shadow-sm transition"
 						>
-							<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm">
-								<div class="flex items-center gap-2 font-semibold text-red-700">
-									<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
-									<span>EN DIRECTO</span>
-									<span id="live-period" class="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">
-										{live ? (live.period > 4 ? `PR${live.period - 4}` : `Q${live.period}`) : 'Q1'}
+							Resumen
+						</button>
+						<button
+							type="button"
+							role="tab"
+							data-match-tab="tiros"
+							aria-selected="false"
+							class="match-tab-btn rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 transition hover:text-gray-900"
+						>
+							Tiros
+						</button>
+						<button
+							type="button"
+							role="tab"
+							data-match-tab="jugadas"
+							aria-selected="false"
+							class="match-tab-btn rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 transition hover:text-gray-900"
+						>
+							Jugadas
+						</button>
+					</div>
+
+					{/* TAB 1: RESUMEN (Marcador total + Puntos por cuartos + Jugador destacado) */}
+					<div id="tab-resumen" data-tab-panel="resumen" class="mt-4 space-y-5">
+						{/* Puntos por cuartos */}
+						<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+							<div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+								<h2 class="text-xs font-semibold tracking-wide text-gray-600 uppercase">
+									Puntos por cuartos
+								</h2>
+								{isFinished && (
+									<span class="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-gray-700 uppercase">
+										Final
 									</span>
-									<span id="live-clock" class="font-mono text-base text-red-900">
-										{live ? `${String(Math.floor(live.clock_ms / 60000)).padStart(2, '0')}:${String(Math.floor((live.clock_ms % 60000) / 1000)).padStart(2, '0')}` : '10:00'}
-									</span>
-								</div>
-								<span class="text-xs text-red-600/80">Actualización automática desde el acta</span>
+								)}
 							</div>
-							<div id="live-quarters" class="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm" />
-							<div id="live-boxscore" class="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0" />
-							<div id="live-pbp" class="hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm" />
-						</section>
-					)
-				}
-
-				{
-					rows.length === 0 ? (
-						<div
-							id="empty-stats-banner"
-							class:list={[
-								'mt-6 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500',
-								live && 'hidden',
-							]}
-						>
-							Aún no hay estadísticas de jugadores para este partido
-						</div>
-					) : (
-						<div class="mt-6 space-y-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
-							{[
-								{ teamId: match.home_id, teamName: match.home_team, rows: homeRows },
-								{ teamId: match.away_id, teamName: match.away_team, rows: awayRows },
-							].map(({ teamId, teamName, rows: teamRows }) => {
-								const t = totals(teamRows);
-								return (
-									<section
-										class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
-									>
-										<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">
-											<a
-												href={`/equipos/${teamId}`}
-												class="transition hover:text-[#79131f] hover:underline"
-											>
-												{teamName}
-											</a>
-										</h2>
-										<div class="overflow-x-auto">
-											<table data-sortable class="w-full text-sm">
-												<thead>
-													<tr
-														class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"
-													>
-														{
-															boxColumns.map((c, i) => (
-																<th
-																	data-sort={i > 0 ? '' : undefined}
-																	data-col={i > 0 ? i : undefined}
-																	class={[
-																		'whitespace-nowrap px-3 py-2.5 font-medium',
-																		i === 0
-																			? 'text-left'
-																			: 'text-right',
-																	].join(' ')}
-																>
-																	<ThTooltip label={c.label} />
-																</th>
-															))
-														}
-													</tr>
-												</thead>
-												<tbody>
-													{teamRows.map((r) => (
-														<tr
-															class="border-b border-gray-100 last:border-0"
-															data-col1={r.points}
-															data-col2={r.fg}
-															data-col3={r.three}
-															data-col4={r.ft_made}
-															data-col5={r.ft_att}
-															data-col6={r.fouls}
-														>
-															<td class="px-3 py-2 font-medium">
-																<span class="text-gray-400">
-																	{r.player_number ?? '–'}
-																</span>{' '}
-																{r.player_name}
-															</td>
-															<td class="px-3 py-2 text-right font-medium tabular-nums">
-																{r.points}
-															</td>
-															<td class="px-3 py-2 text-right tabular-nums">
-																{r.fg}
-															</td>
-															<td class="px-3 py-2 text-right tabular-nums">
-																{r.three}
-															</td>
-															<td class="px-3 py-2 text-right tabular-nums">
-																{r.ft_made}
-															</td>
-															<td class="px-3 py-2 text-right tabular-nums">
-																{r.ft_att}
-															</td>
-															<td
-																class={[
-																	'px-3 py-2 text-right tabular-nums',
-																	r.fouls >= MAX_FOULS
-																		? 'font-bold text-[#641B24]'
-																		: '',
-																].join(' ')}
-															>
-																{r.fouls}
-															</td>
-														</tr>
-													))}
-												</tbody>
-												<tfoot>
-													<tr class="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-														<td class="px-3 py-2">Totales</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.points}
-														</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.fg}
-														</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.three}
-														</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.ft_made}
-														</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.ft_att}
-														</td>
-														<td class="px-3 py-2 text-right tabular-nums">
-															{t.fouls}
-														</td>
-													</tr>
-												</tfoot>
-											</table>
-										</div>
-									</section>
-								);
-							})}
-						</div>
-					)
-				}
-
-				{
-					hasQuarterScores && (
-						<div class="mt-6">
-							<QuarterChart
-								home={homePeriods}
-								away={awayPeriods}
-								homeName={match.home_team}
-								awayName={match.away_team}
-								homeShort={match.home_short}
-								awayShort={match.away_short}
-							/>
-						</div>
-					)
-				}
-
-				{
-					(moved || match.observations) && (
-						<div class="mt-4 space-y-3">
-							{moved && match.original_date && (
-								<MovedBadge originalDate={match.original_date} date={match.date} />
-							)}
-							{match.observations && (
-								<div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-									<h2 class="text-xs font-semibold tracking-wide text-gray-500 uppercase">
-										Observaciones
-									</h2>
-									<p class="mt-1 text-sm whitespace-pre-line text-gray-700">
-										{match.observations}
+							<div id="resumen-quarters" class="overflow-x-auto">
+								{hasQuarterScores || isLive ? (
+									<table class="w-full text-center text-sm">
+										<thead class="border-b border-gray-100 bg-gray-50/50 text-xs text-gray-500">
+											<tr>
+												<th class="px-4 py-2 text-left font-medium">Equipo</th>
+												{visibleQuarterLabels.map((lbl) => (
+													<th class="px-2.5 py-2 font-medium">{lbl}</th>
+												))}
+												<th class="px-4 py-2 text-right font-bold text-gray-700">Total</th>
+											</tr>
+										</thead>
+										<tbody>
+											<tr class="border-b border-gray-100">
+												<td class="px-4 py-2.5 text-left font-medium text-gray-900">
+													{match.home_team}
+												</td>
+												{visibleQuarterLabels.map((_, i) => (
+													<td class="px-2.5 py-2.5 tabular-nums text-gray-700">
+														{homePeriods[i] ?? '–'}
+													</td>
+												))}
+												<td class="px-4 py-2.5 text-right font-bold tabular-nums text-gray-900">
+													{displayHomeScore ?? '–'}
+												</td>
+											</tr>
+											<tr>
+												<td class="px-4 py-2.5 text-left font-medium text-gray-900">
+													{match.away_team}
+												</td>
+												{visibleQuarterLabels.map((_, i) => (
+													<td class="px-2.5 py-2.5 tabular-nums text-gray-700">
+														{awayPeriods[i] ?? '–'}
+													</td>
+												))}
+												<td class="px-4 py-2.5 text-right font-bold tabular-nums text-gray-900">
+													{displayAwayScore ?? '–'}
+												</td>
+											</tr>
+										</tbody>
+									</table>
+								) : (
+									<p class="p-4 text-center text-sm text-gray-500">
+										Sin parciales por cuartos registrados.
 									</p>
-								</div>
-							)}
-						</div>
-					)
-				}
+								)}
+							</div>
+						</section>
 
-				{
-					match.acta_photo_key && (
-						<div class="mt-6">
-							<button
-								type="button"
-								data-acta-open
-								class="flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#641B24] px-6 py-3 text-sm font-semibold tracking-wide text-white uppercase shadow-sm transition hover:bg-[#7a2130] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#641B24]/40 focus-visible:ring-offset-2 sm:mx-auto sm:w-fit"
-							>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									width="20"
-									height="20"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
-									<path
-										d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
-									></path>
-									<path d="M12 11h4"></path>
-									<path d="M12 16h4"></path>
-									<path d="M8 11h.01"></path>
-									<path d="M8 16h.01"></path>
-								</svg>
-								Ver acta
-							</button>
+						{/* Jugador destacado */}
+						<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+							<div class="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+								<h2 class="text-xs font-semibold tracking-wide text-gray-600 uppercase">
+									Jugador destacado
+								</h2>
+							</div>
+							<div id="resumen-mvp" class="p-4">
+								{overallMvp ? (
+									<div class="space-y-4">
+										<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+											<div class="min-w-0">
+												<span class="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase">
+													★ Destacado del partido
+												</span>
+												<p class="mt-1.5 truncate text-lg font-bold text-gray-900">
+													<span class="mr-1.5 font-mono text-sm text-gray-500">
+														#{overallMvp.number}
+													</span>
+													{overallMvp.name}
+												</p>
+												<p class="text-xs font-medium text-gray-600">
+													{overallMvp.teamName}
+												</p>
+											</div>
+											<div class="flex items-center gap-4 text-center">
+												<div>
+													<div class="font-display text-3xl leading-none text-[#641B24] tabular-nums">
+														{overallMvp.points}
+													</div>
+													<div class="mt-0.5 text-[10px] font-semibold text-gray-500 uppercase">
+														PTS
+													</div>
+												</div>
+												<div class="h-8 w-px bg-amber-200" />
+												<div class="flex gap-3 text-xs tabular-nums text-gray-700">
+													<div>
+														<div class="font-semibold">{overallMvp.fg2}</div>
+														<div class="text-[10px] text-gray-500">2P</div>
+													</div>
+													<div>
+														<div class="font-semibold">{overallMvp.fg3}</div>
+														<div class="text-[10px] text-gray-500">3P</div>
+													</div>
+													<div>
+														<div class="font-semibold">
+															{overallMvp.ftm}/{overallMvp.fta}
+														</div>
+														<div class="text-[10px] text-gray-500">TL</div>
+													</div>
+													<div>
+														<div class="font-semibold">{overallMvp.fouls}</div>
+														<div class="text-[10px] text-gray-500">FAL</div>
+													</div>
+												</div>
+											</div>
+										</div>
 
-							<dialog
-								id="acta-dialog"
-								aria-label="Acta del partido"
-								class="m-auto max-h-none max-w-none border-0 bg-transparent p-0"
-							>
-								<div data-acta-backdrop class="relative flex items-center justify-center">
-									<img
-										src={`/${match.acta_photo_key}`}
-										alt={`Acta del partido ${match.home_team} contra ${match.away_team}`}
-										loading="eager"
-										decoding="async"
-										class="h-auto max-h-[85dvh] w-auto max-w-[92vw] rounded-xl bg-white object-contain shadow-2xl"
-									/>
-								</div>
+										{(bestHome || bestAway) && (
+											<div class="grid gap-3 sm:grid-cols-2">
+												{[
+													{ label: match.home_team, player: bestHome },
+													{ label: match.away_team, player: bestAway },
+												].map(
+													({ label, player }) =>
+														player && (
+															<div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/70 px-3.5 py-2.5">
+																<div class="min-w-0">
+																	<p class="text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
+																		{label}
+																	</p>
+																	<p class="truncate text-sm font-semibold text-gray-900">
+																		<span class="mr-1 font-mono text-xs text-gray-400">
+																			#{player.number}
+																		</span>
+																		{player.name}
+																	</p>
+																</div>
+																<div class="shrink-0 text-right tabular-nums">
+																	<span class="font-display text-2xl text-gray-900">
+																		{player.points}
+																	</span>
+																	<span class="ml-1 text-[10px] font-semibold text-gray-500 uppercase">
+																		pts
+																	</span>
+																</div>
+															</div>
+														),
+												)}
+											</div>
+										)}
+									</div>
+								) : (
+									<p class="text-center text-sm text-gray-500">
+										Aún no hay anotadores registrados.
+									</p>
+								)}
+							</div>
+						</section>
+
+						{hasQuarterScores && !isLive && (
+							<div>
+								<QuarterChart
+									home={homePeriods}
+									away={awayPeriods}
+									homeName={match.home_team}
+									awayName={match.away_team}
+									homeShort={match.home_short}
+									awayShort={match.away_short}
+								/>
+							</div>
+						)}
+
+						{(moved || match.observations) && (
+							<div class="space-y-3">
+								{moved && match.original_date && (
+									<MovedBadge originalDate={match.original_date} date={match.date} />
+								)}
+								{match.observations && (
+									<div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+										<h2 class="text-xs font-semibold tracking-wide text-gray-500 uppercase">
+											Observaciones
+										</h2>
+										<p class="mt-1 text-sm whitespace-pre-line text-gray-700">
+											{match.observations}
+										</p>
+									</div>
+								)}
+							</div>
+						)}
+
+						{match.acta_photo_key && (
+							<div>
 								<button
 									type="button"
-									data-acta-close
-									aria-label="Cerrar"
-									class="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+									data-acta-open
+									class="flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#641B24] px-6 py-3 text-sm font-semibold tracking-wide text-white uppercase shadow-sm transition hover:bg-[#7a2130] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#641B24]/40 focus-visible:ring-offset-2 sm:mx-auto sm:w-fit"
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -497,20 +645,309 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 										stroke-linejoin="round"
 										aria-hidden="true"
 									>
-										<path d="M18 6 6 18"></path>
-										<path d="m6 6 12 12"></path>
+										<rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+										<circle cx="9" cy="9" r="2"></circle>
+										<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
 									</svg>
+									Ver acta
 								</button>
-							</dialog>
+
+								<dialog
+									id="acta-dialog"
+									class="m-auto max-h-[92vh] max-w-[92vw] overflow-visible bg-transparent p-0"
+								>
+									<div
+										data-acta-backdrop
+										class="relative flex items-center justify-center"
+									>
+										<img
+											src={`/${match.acta_photo_key}`}
+											alt={`Acta oficial de ${match.home_team} vs ${match.away_team}`}
+											class="max-h-[88vh] max-w-[88vw] rounded-xl bg-white object-contain shadow-2xl"
+										/>
+									</div>
+									<button
+										type="button"
+										data-acta-close
+										aria-label="Cerrar acta"
+										class="fixed top-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-black/75 text-white shadow-lg transition hover:bg-black"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="20"
+											height="20"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											aria-hidden="true"
+										>
+											<path d="M18 6 6 18"></path>
+											<path d="m6 6 12 12"></path>
+										</svg>
+									</button>
+								</dialog>
+							</div>
+						)}
+					</div>
+
+					{/* TAB 2: TIROS (Jugadores, puntos, 2P, 3P, TL, TLI, Faltas) */}
+					<div id="tab-tiros" data-tab-panel="tiros" class="mt-4 hidden">
+						<div
+							id="tiros-boxscore"
+							class="space-y-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0"
+						>
+							{liveStats ? (
+								[
+									{ teamId: match.home_id, teamName: match.home_team, list: unifiedHomePlayers },
+									{ teamId: match.away_id, teamName: match.away_team, list: unifiedAwayPlayers },
+								].map(({ teamId, teamName, list }) => {
+									const t = liveTotals(list);
+									return (
+										<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+											<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">
+												<a
+													href={`/equipos/${teamId}`}
+													class="transition hover:text-[#79131f] hover:underline"
+												>
+													{teamName}
+												</a>
+											</h2>
+											<div class="overflow-x-auto">
+												<table class="w-full text-sm">
+													<thead>
+														<tr class="border-b border-gray-200 text-left text-xs tracking-wide text-gray-500 uppercase">
+															<th class="px-3 py-2.5 text-left font-medium">Jugador</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">P</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">2P</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">3P</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">TL</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">TLI</th>
+															<th class="px-2.5 py-2.5 text-right font-medium">Fal</th>
+														</tr>
+													</thead>
+													<tbody>
+														{list.map((p) => (
+															<tr class="border-b border-gray-100 last:border-0">
+																<td class="px-3 py-2 font-medium">
+																	<span class="mr-1 font-mono text-xs text-gray-400">
+																		#{p.number}
+																	</span>
+																	{p.name}
+																</td>
+																<td class="px-2.5 py-2 text-right font-semibold tabular-nums">
+																	{p.points}
+																</td>
+																<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">
+																	{p.fg2}
+																</td>
+																<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">
+																	{p.fg3}
+																</td>
+																<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">
+																	{p.ftm}
+																</td>
+																<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">
+																	{p.fta}
+																</td>
+																<td
+																	class:list={[
+																		'px-2.5 py-2 text-right tabular-nums',
+																		p.fouls >= MAX_FOULS
+																			? 'font-bold text-[#641B24]'
+																			: 'text-gray-600',
+																	]}
+																>
+																	{p.fouls}
+																</td>
+															</tr>
+														))}
+													</tbody>
+													<tfoot>
+														<tr class="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+															<td class="px-3 py-2">Totales</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.points}</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.fg2}</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.fg3}</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.ftm}</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.fta}</td>
+															<td class="px-2.5 py-2 text-right tabular-nums">{t.fouls}</td>
+														</tr>
+													</tfoot>
+												</table>
+											</div>
+										</section>
+									);
+								})
+							) : rows.length > 0 ? (
+								[
+									{ teamId: match.home_id, teamName: match.home_team, rows: homeRows },
+									{ teamId: match.away_id, teamName: match.away_team, rows: awayRows },
+								].map(({ teamId, teamName, rows: teamRows }) => {
+									const t = totals(teamRows);
+									return (
+										<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+											<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">
+												<a
+													href={`/equipos/${teamId}`}
+													class="transition hover:text-[#79131f] hover:underline"
+												>
+													{teamName}
+												</a>
+											</h2>
+											<div class="overflow-x-auto">
+												<table data-sortable class="w-full text-sm">
+													<thead>
+														<tr class="border-b border-gray-200 text-left text-xs tracking-wide text-gray-500 uppercase">
+															{boxColumns.map((c, i) => (
+																<th
+																	data-sort={i > 0 ? '' : undefined}
+																	data-col={i > 0 ? i : undefined}
+																	class={[
+																		'whitespace-nowrap px-3 py-2.5 font-medium',
+																		i === 0 ? 'text-left' : 'text-right',
+																	].join(' ')}
+																>
+																	<ThTooltip label={c.label} />
+																</th>
+															))}
+														</tr>
+													</thead>
+													<tbody>
+														{teamRows.map((r) => (
+															<tr
+																class="border-b border-gray-100 last:border-0"
+																data-col1={r.points}
+																data-col2={r.fg}
+																data-col3={r.three}
+																data-col4={r.ft_made}
+																data-col5={r.ft_att}
+																data-col6={r.fouls}
+															>
+																<td class="px-3 py-2 font-medium">
+																	<span class="text-gray-400">
+																		{r.player_number ?? '–'}
+																	</span>{' '}
+																	{r.player_name}
+																</td>
+																<td class="px-3 py-2 text-right font-medium tabular-nums">
+																	{r.points}
+																</td>
+																<td class="px-3 py-2 text-right tabular-nums">
+																	{r.fg}
+																</td>
+																<td class="px-3 py-2 text-right tabular-nums">
+																	{r.three}
+																</td>
+																<td class="px-3 py-2 text-right tabular-nums">
+																	{r.ft_made}
+																</td>
+																<td class="px-3 py-2 text-right tabular-nums">
+																	{r.ft_att}
+																</td>
+																<td
+																	class={[
+																		'px-3 py-2 text-right tabular-nums',
+																		r.fouls >= MAX_FOULS
+																			? 'font-bold text-[#641B24]'
+																			: '',
+																	].join(' ')}
+																>
+																	{r.fouls}
+																</td>
+															</tr>
+														))}
+													</tbody>
+													<tfoot>
+														<tr class="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+															<td class="px-3 py-2">Totales</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.points}
+															</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.fg}
+															</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.three}
+															</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.ft_made}
+															</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.ft_att}
+															</td>
+															<td class="px-3 py-2 text-right tabular-nums">
+																{t.fouls}
+															</td>
+														</tr>
+													</tfoot>
+												</table>
+											</div>
+										</section>
+									);
+								})
+							) : (
+								<div class="col-span-2 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+									Aún no hay estadísticas de tiros para este partido.
+								</div>
+							)}
 						</div>
-					)
-				}
+					</div>
+
+					{/* TAB 3: JUGADAS (Últimas jugadas / Play-by-play) */}
+					<div id="tab-jugadas" data-tab-panel="jugadas" class="mt-4 hidden">
+						<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+							<div class="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+								<h2 class="text-xs font-semibold tracking-wide text-gray-600 uppercase">
+									Últimas jugadas
+								</h2>
+							</div>
+							<div id="jugadas-list" class="divide-y divide-gray-100">
+								{initialPbp.length > 0 ? (
+									initialPbp.map((ev) => (
+										<div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+											<div class="flex min-w-0 items-center gap-2.5">
+												<span class="shrink-0 text-base">{ev.icon || '•'}</span>
+												<div class="min-w-0">
+													<p class="font-medium text-gray-900">
+														{ev.desc || ev.txt || ev.text || ''}
+													</p>
+													{ev.team && (
+														<p class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+															<span
+																class="inline-block h-2 w-2 rounded-full"
+																style={`background:${ev.color || '#641B24'}`}
+															/>
+															{ev.team}
+														</p>
+													)}
+												</div>
+											</div>
+											<div class="flex shrink-0 items-center gap-1.5 font-mono text-xs text-gray-500">
+												{ev.per != null && (
+													<span class="rounded bg-gray-100 px-1.5 py-0.5 font-semibold text-gray-700">
+														{ev.per > 4 ? `PR${ev.per - 4}` : `Q${ev.per}`}
+													</span>
+												)}
+												<span>{ev.clk || ev.time || ''}</span>
+											</div>
+										</div>
+									))
+								) : (
+									<p class="p-8 text-center text-sm text-gray-500">
+										Aún no hay jugadas registradas para este partido.
+									</p>
+								)}
+							</div>
+						</section>
+					</div>
+				</div>
 			</div>
 		) : (
 			<div class="mx-auto max-w-5xl px-4 pt-4 pb-6">
-				<div
-					class="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500"
-				>
+				<div class="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
 					Partido no encontrado.
 				</div>
 			</div>
@@ -522,6 +959,7 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 	import '../../lib/team-names';
 	import '../../lib/table-interactions';
 
+	// Acta photo modal
 	const dialog = document.getElementById('acta-dialog') as HTMLDialogElement | null;
 	const openBtn = document.querySelector<HTMLButtonElement>('[data-acta-open]');
 	const closeBtn = document.querySelector<HTMLButtonElement>('[data-acta-close]');
@@ -529,8 +967,6 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 	if (dialog && openBtn) {
 		openBtn.addEventListener('click', () => dialog.showModal());
 		closeBtn?.addEventListener('click', () => dialog.close());
-		// Clicking the dimmed backdrop — or the framing area around the photo —
-		// closes the viewer. ESC is handled natively by <dialog>.
 		dialog.addEventListener('click', (event) => {
 			const target = event.target as HTMLElement | null;
 			const isPhoto = target?.closest('img') != null;
@@ -539,53 +975,186 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 		});
 	}
 
-	const livePanel = document.getElementById('live-panel') as HTMLElement | null;
-	if (livePanel) {
-		const matchId = livePanel.dataset.matchId;
-		const homeName = livePanel.dataset.homeName || 'Local';
-		const awayName = livePanel.dataset.awayName || 'Visitante';
+	// 3-tab switching (Resumen / Tiros / Jugadas)
+	const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-match-tab]'));
+	const tabPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-tab-panel]'));
+
+	const setActiveTab = (tabName: string) => {
+		tabButtons.forEach((btn) => {
+			const active = btn.dataset.matchTab === tabName;
+			btn.setAttribute('aria-selected', active ? 'true' : 'false');
+			btn.className = active
+				? 'match-tab-btn rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#641B24] shadow-sm transition'
+				: 'match-tab-btn rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 transition hover:text-gray-900';
+		});
+		tabPanels.forEach((panel) => {
+			panel.classList.toggle('hidden', panel.dataset.tabPanel !== tabName);
+		});
+	};
+
+	tabButtons.forEach((btn) => {
+		btn.addEventListener('click', () => {
+			if (btn.dataset.matchTab) setActiveTab(btn.dataset.matchTab);
+		});
+	});
+
+	// Live polling for scheduled matches (updates Hero + Resumen + Tiros + Jugadas without changing active tab)
+	const root = document.getElementById('match-page-root') as HTMLElement | null;
+	if (root && root.dataset.matchStatus === 'scheduled') {
+		const matchId = root.dataset.matchId;
+		const homeName = root.dataset.homeName || 'Local';
+		const awayName = root.dataset.awayName || 'Visitante';
 		const heroWrap = document.getElementById('hero-score-wrap');
+		const liveBanner = document.getElementById('live-banner');
 		const emptyBanner = document.getElementById('empty-stats-banner');
+		const tabsShell = document.getElementById('match-tabs-shell');
 		const periodEl = document.getElementById('live-period');
 		const clockEl = document.getElementById('live-clock');
-		const quartersEl = document.getElementById('live-quarters');
-		const boxEl = document.getElementById('live-boxscore');
-		const pbpEl = document.getElementById('live-pbp');
+		const resumenQuartersEl = document.getElementById('resumen-quarters');
+		const resumenMvpEl = document.getElementById('resumen-mvp');
+		const tirosBoxEl = document.getElementById('tiros-boxscore');
+		const jugadasListEl = document.getElementById('jugadas-list');
 
 		const esc = (s: unknown) =>
-			String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
+			String(s ?? '').replace(
+				/[&<>"]/g,
+				(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] || c,
+			);
 
 		const fmtClock = (ms: number) => {
 			const sec = Math.max(0, Math.floor(ms / 1000));
 			return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
 		};
 
+		const pickBest = (list: any[]) => {
+			if (!list || !list.length) return null;
+			return [...list].sort((a, b) => {
+				if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
+				if ((b.fg3 || 0) !== (a.fg3 || 0)) return (b.fg3 || 0) - (a.fg3 || 0);
+				if ((b.fg2 || 0) !== (a.fg2 || 0)) return (b.fg2 || 0) - (a.fg2 || 0);
+				return (a.fouls || 0) - (b.fouls || 0);
+			})[0];
+		};
+
+		const renderMvp = (homeList: any[], awayList: any[]) => {
+			const bh = pickBest(homeList);
+			const ba = pickBest(awayList);
+			const mvp =
+				bh && ba
+					? (bh.points || 0) >= (ba.points || 0)
+						? { ...bh, teamName: homeName }
+						: { ...ba, teamName: awayName }
+					: bh
+						? { ...bh, teamName: homeName }
+						: ba
+							? { ...ba, teamName: awayName }
+							: null;
+
+			if (!mvp) {
+				return '<p class="text-center text-sm text-gray-500">Aún no hay anotadores registrados.</p>';
+			}
+
+			const miniCards = [
+				{ label: homeName, player: bh },
+				{ label: awayName, player: ba },
+			]
+				.filter((x) => x.player)
+				.map(
+					({ label, player }) => `<div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/70 px-3.5 py-2.5">
+						<div class="min-w-0">
+							<p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">${esc(label)}</p>
+							<p class="truncate text-sm font-semibold text-gray-900"><span class="mr-1 font-mono text-xs text-gray-400">#${esc(player.number)}</span>${esc(player.name)}</p>
+						</div>
+						<div class="shrink-0 text-right tabular-nums">
+							<span class="font-display text-2xl text-gray-900">${player.points ?? 0}</span>
+							<span class="ml-1 text-[10px] font-semibold uppercase text-gray-500">pts</span>
+						</div>
+					</div>`,
+				)
+				.join('');
+
+			return `<div class="space-y-4">
+				<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+					<div class="min-w-0">
+						<span class="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">★ Destacado del partido</span>
+						<p class="mt-1.5 truncate text-lg font-bold text-gray-900"><span class="mr-1.5 font-mono text-sm text-gray-500">#${esc(mvp.number)}</span>${esc(mvp.name)}</p>
+						<p class="text-xs font-medium text-gray-600">${esc(mvp.teamName)}</p>
+					</div>
+					<div class="flex items-center gap-4 text-center">
+						<div>
+							<div class="font-display text-3xl leading-none tabular-nums text-[#641B24]">${mvp.points ?? 0}</div>
+							<div class="mt-0.5 text-[10px] font-semibold uppercase text-gray-500">PTS</div>
+						</div>
+						<div class="h-8 w-px bg-amber-200"></div>
+						<div class="flex gap-3 text-xs tabular-nums text-gray-700">
+							<div><div class="font-semibold">${mvp.fg2 ?? 0}</div><div class="text-[10px] text-gray-500">2P</div></div>
+							<div><div class="font-semibold">${mvp.fg3 ?? 0}</div><div class="text-[10px] text-gray-500">3P</div></div>
+							<div><div class="font-semibold">${mvp.ftm ?? 0}/${mvp.fta ?? 0}</div><div class="text-[10px] text-gray-500">TL</div></div>
+							<div><div class="font-semibold">${mvp.fouls ?? 0}</div><div class="text-[10px] text-gray-500">FAL</div></div>
+						</div>
+					</div>
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2">${miniCards}</div>
+			</div>`;
+		};
+
 		const renderTeamTable = (title: string, list: any[]) => {
 			if (!list || !list.length) return '';
+			const totals = list.reduce(
+				(acc, p) => ({
+					points: acc.points + (p.points || 0),
+					fg2: acc.fg2 + (p.fg2 || 0),
+					fg3: acc.fg3 + (p.fg3 || 0),
+					ftm: acc.ftm + (p.ftm || 0),
+					fta: acc.fta + (p.fta || 0),
+					fouls: acc.fouls + (p.fouls || 0),
+				}),
+				{ points: 0, fg2: 0, fg3: 0, ftm: 0, fta: 0, fouls: 0 },
+			);
 			const rowsHtml = list
 				.map(
-					(p) => `<tr class="border-t border-gray-100">
-						<td class="px-3 py-2 text-left text-sm"><span class="mr-1.5 font-mono text-xs text-gray-400">#${esc(p.number)}</span>${esc(p.name)}</td>
-						<td class="px-2 py-2 text-right font-semibold">${p.points ?? 0}</td>
-						<td class="px-2 py-2 text-right text-gray-600">${p.fg2 ?? 0}</td>
-						<td class="px-2 py-2 text-right text-gray-600">${p.fg3 ?? 0}</td>
-						<td class="px-2 py-2 text-right text-gray-600">${p.ftm ?? 0}/${p.fta ?? 0}</td>
-						<td class="px-2 py-2 text-right text-gray-600">${p.fouls ?? 0}</td>
+					(p) => `<tr class="border-b border-gray-100 last:border-0">
+						<td class="px-3 py-2 text-left text-sm font-medium"><span class="mr-1 font-mono text-xs text-gray-400">#${esc(p.number)}</span>${esc(p.name)}</td>
+						<td class="px-2.5 py-2 text-right font-semibold tabular-nums">${p.points ?? 0}</td>
+						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.fg2 ?? 0}</td>
+						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.fg3 ?? 0}</td>
+						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.ftm ?? 0}</td>
+						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.fta ?? 0}</td>
+						<td class="px-2.5 py-2 text-right tabular-nums ${(p.fouls ?? 0) >= 5 ? 'font-bold text-[#641B24]' : 'text-gray-600'}">${p.fouls ?? 0}</td>
 					</tr>`,
 				)
 				.join('');
 			return `<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-				<h3 class="border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-semibold">${esc(title)}</h3>
+				<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">${esc(title)}</h2>
 				<div class="overflow-x-auto"><table class="w-full text-sm">
-					<thead class="bg-gray-50/50 text-xs text-gray-500">
-						<tr><th class="px-3 py-2 text-left">Jugador</th><th class="px-2 py-2 text-right">P</th><th class="px-2 py-2 text-right">2P</th><th class="px-2 py-2 text-right">3P</th><th class="px-2 py-2 text-right">TL</th><th class="px-2 py-2 text-right">Fal</th></tr>
+					<thead>
+						<tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+							<th class="px-3 py-2.5 text-left font-medium">Jugador</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">P</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">2P</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">3P</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">TL</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">TLI</th>
+							<th class="px-2.5 py-2.5 text-right font-medium">Fal</th>
+						</tr>
 					</thead>
 					<tbody>${rowsHtml}</tbody>
+					<tfoot>
+						<tr class="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+							<td class="px-3 py-2">Totales</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.points}</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.fg2}</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.fg3}</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.ftm}</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.fta}</td>
+							<td class="px-2.5 py-2 text-right tabular-nums">${totals.fouls}</td>
+						</tr>
+					</tfoot>
 				</table></div>
 			</section>`;
 		};
 
-		let wasLive = !livePanel.classList.contains('hidden');
+		let wasLive = Boolean(liveBanner && !liveBanner.classList.contains('hidden'));
 
 		const pollLive = async () => {
 			if (!matchId || document.hidden) return;
@@ -602,7 +1171,8 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 				}
 
 				wasLive = true;
-				livePanel.classList.remove('hidden');
+				liveBanner?.classList.remove('hidden');
+				tabsShell?.classList.remove('hidden');
 				emptyBanner?.classList.add('hidden');
 
 				if (heroWrap) {
@@ -615,33 +1185,55 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 					clockEl.textContent = fmtClock(Number(data.clock_ms ?? 0));
 				}
 
-				if (quartersEl && data.quarters) {
+				if (resumenQuartersEl && data.quarters) {
 					const labels = ['Q1', 'Q2', 'Q3', 'Q4', 'PR1', 'PR2', 'PR3'];
-					const maxIdx = Math.max(4, Number(data.period || 1));
-					const cols = labels.slice(0, Math.min(labels.length, maxIdx));
-					quartersEl.classList.remove('hidden');
-					quartersEl.innerHTML = `<table class="w-full text-center text-sm">
-						<thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Equipo</th>${cols.map((c) => `<th class="px-2 py-2">${c}</th>`).join('')}<th class="px-3 py-2 font-bold">Total</th></tr></thead>
+					const cols = labels.slice(0, Math.min(labels.length, Math.max(4, Number(data.period || 1))));
+					resumenQuartersEl.innerHTML = `<table class="w-full text-center text-sm">
+						<thead class="border-b border-gray-100 bg-gray-50/50 text-xs text-gray-500">
+							<tr><th class="px-4 py-2 text-left font-medium">Equipo</th>${cols.map((c) => `<th class="px-2.5 py-2 font-medium">${c}</th>`).join('')}<th class="px-4 py-2 text-right font-bold text-gray-700">Total</th></tr>
+						</thead>
 						<tbody>
-							<tr class="border-t border-gray-100"><td class="px-3 py-2 text-left font-medium">${esc(homeName)}</td>${cols.map((_, i) => `<td class="px-2 py-2">${data.quarters.home[i] ?? '–'}</td>`).join('')}<td class="px-3 py-2 font-bold">${data.home_score ?? 0}</td></tr>
-							<tr class="border-t border-gray-100"><td class="px-3 py-2 text-left font-medium">${esc(awayName)}</td>${cols.map((_, i) => `<td class="px-2 py-2">${data.quarters.away[i] ?? '–'}</td>`).join('')}<td class="px-3 py-2 font-bold">${data.away_score ?? 0}</td></tr>
+							<tr class="border-b border-gray-100"><td class="px-4 py-2.5 text-left font-medium text-gray-900">${esc(homeName)}</td>${cols.map((_, i) => `<td class="px-2.5 py-2.5 tabular-nums text-gray-700">${data.quarters.home[i] ?? '–'}</td>`).join('')}<td class="px-4 py-2.5 text-right font-bold tabular-nums text-gray-900">${data.home_score ?? 0}</td></tr>
+							<tr><td class="px-4 py-2.5 text-left font-medium text-gray-900">${esc(awayName)}</td>${cols.map((_, i) => `<td class="px-2.5 py-2.5 tabular-nums text-gray-700">${data.quarters.away[i] ?? '–'}</td>`).join('')}<td class="px-4 py-2.5 text-right font-bold tabular-nums text-gray-900">${data.away_score ?? 0}</td></tr>
 						</tbody>
 					</table>`;
 				}
 
-				if (boxEl && data.players) {
-					boxEl.innerHTML =
-						renderTeamTable(homeName, data.players.home || []) +
-						renderTeamTable(awayName, data.players.away || []);
+				if (data.players) {
+					const hList = data.players.home || [];
+					const aList = data.players.away || [];
+					if (resumenMvpEl) {
+						resumenMvpEl.innerHTML = renderMvp(hList, aList);
+					}
+					if (tirosBoxEl) {
+						tirosBoxEl.innerHTML = renderTeamTable(homeName, hList) + renderTeamTable(awayName, aList);
+					}
 				}
 
-				if (pbpEl && Array.isArray(data.pbp) && data.pbp.length > 0) {
-					pbpEl.classList.remove('hidden');
-					pbpEl.innerHTML = `<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Últimas jugadas</h3>
-						<ul class="space-y-1 text-sm text-gray-700">${data.pbp
-							.slice(0, 8)
-							.map((ev: any) => `<li class="flex items-center justify-between gap-2 border-t border-gray-100 pt-1"><span>${esc(ev.txt || ev.text || ev.desc || '')}</span><span class="shrink-0 font-mono text-xs text-gray-400">${esc(ev.clk || ev.time || '')}</span></li>`)
-							.join('')}</ul>`;
+				if (jugadasListEl && Array.isArray(data.pbp)) {
+					const plays = [...data.pbp].reverse();
+					if (plays.length === 0) {
+						jugadasListEl.innerHTML =
+							'<p class="p-8 text-center text-sm text-gray-500">Aún no hay jugadas registradas para este partido.</p>';
+					} else {
+						jugadasListEl.innerHTML = plays
+							.map(
+								(ev: any) => `<div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+									<div class="flex min-w-0 items-center gap-2.5">
+										<span class="shrink-0 text-base">${esc(ev.icon || '•')}</span>
+										<div class="min-w-0">
+											<p class="font-medium text-gray-900">${esc(ev.desc || ev.txt || ev.text || '')}</p>
+											${ev.team ? `<p class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500"><span class="inline-block h-2 w-2 rounded-full" style="background:${esc(ev.color || '#641B24')}"></span>${esc(ev.team)}</p>` : ''}
+										</div>
+									</div>
+									<div class="flex shrink-0 items-center gap-1.5 font-mono text-xs text-gray-500">
+										${ev.per != null ? `<span class="rounded bg-gray-100 px-1.5 py-0.5 font-semibold text-gray-700">${ev.per > 4 ? `PR${ev.per - 4}` : `Q${ev.per}`}</span>` : ''}
+										<span>${esc(ev.clk || ev.time || '')}</span>
+									</div>
+								</div>`,
+							)
+							.join('');
+					}
 				}
 			} catch {
 				// Ignore transient network errors during polling

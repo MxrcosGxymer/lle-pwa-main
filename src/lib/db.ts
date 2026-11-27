@@ -380,6 +380,7 @@ export interface MatchDetail {
 	away_ot3: number | null;
 	observations: string | null;
 	acta_photo_key: string | null;
+	pbp_json: string | null;
 	original_date: string | null;
 	venue_name: string | null;
 	venue_short: string | null;
@@ -399,7 +400,7 @@ export async function getMatch(id: number): Promise<MatchDetail | null> {
 			        m.away_q1, m.away_q2, m.away_q3, m.away_q4,
 			        m.home_ot1, m.home_ot2, m.home_ot3,
 			        m.away_ot1, m.away_ot2, m.away_ot3,
-			        m.observations, m.acta_photo_key, m.original_date,
+			        m.observations, m.acta_photo_key, m.pbp_json, m.original_date,
 			        v.name AS venue_name, v.short_name AS venue_short, v.maps_url AS venue_maps
 			 FROM matches m
 			 JOIN teams ht ON ht.id = m.home_team_id
