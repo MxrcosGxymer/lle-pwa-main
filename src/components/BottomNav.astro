@@ -1,0 +1,160 @@
+---
+const pathname = Astro.url.pathname;
+const links = [
+	{
+		href: '/calendario',
+		label: 'Calendario',
+		icon: '<path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Z" />',
+		iconFill:
+			'<path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,48H48V48H72v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24Z" />',
+	},
+	{
+		href: '/clasificacion',
+		label: 'Clasificación',
+		icon: '<path d="M232,64H208V48a8,8,0,0,0-8-8H56a8,8,0,0,0-8,8V64H24A16,16,0,0,0,8,80V96a40,40,0,0,0,40,40h3.65A80.13,80.13,0,0,0,120,191.61V216H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16H136V191.58c31.94-3.23,58.44-25.64,68.08-55.58H208a40,40,0,0,0,40-40V80A16,16,0,0,0,232,64ZM48,120A24,24,0,0,1,24,96V80H48v32q0,4,.39,8Zm144-8.9c0,35.52-29,64.64-64,64.9a64,64,0,0,1-64-64V56H192ZM232,96a24,24,0,0,1-24,24h-.5a81.81,81.81,0,0,0,.5-8.9V80h24Z" />',
+		iconFill:
+			'<path d="M232,64H208V48a8,8,0,0,0-8-8H56a8,8,0,0,0-8,8V64H24A16,16,0,0,0,8,80V96a40,40,0,0,0,40,40h3.65A80.13,80.13,0,0,0,120,191.61V216H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16H136V191.58c31.94-3.23,58.44-25.64,68.08-55.58H208a40,40,0,0,0,40-40V80A16,16,0,0,0,232,64ZM48,120A24,24,0,0,1,24,96V80H48v32q0,4,.39,8ZM232,96a24,24,0,0,1-24,24h-.5a81.81,81.81,0,0,0,.5-8.9V80h24Z" />',
+	},
+	{
+		href: '/',
+		label: 'Inicio',
+		icon: '<path d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z" />',
+		iconFill:
+			'<path d="M224,120v96a8,8,0,0,1-8,8H160a8,8,0,0,1-8-8V164a4,4,0,0,0-4-4H108a4,4,0,0,0-4,4v52a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V120a16,16,0,0,1,4.69-11.31l80-80a16,16,0,0,1,22.62,0l80,80A16,16,0,0,1,224,120Z" />',
+	},
+	{
+		href: '/equipos',
+		label: 'Equipos',
+		icon: '<path d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.27,47,25.53a8,8,0,0,0,4.2,0c1-.26,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0Z" />',
+		iconFill:
+			'<path d="M224,56v56c0,52.72-25.52,84.67-46.93,102.19-23.06,18.86-46,25.27-47,25.53a8,8,0,0,1-4.2,0c-1-.26-23.91-6.67-47-25.53C57.52,196.67,32,164.72,32,112V56A16,16,0,0,1,48,40H208A16,16,0,0,1,224,56Z" />',
+	},
+	{
+		href: '/estadisticas',
+		label: 'Estadísticas',
+		icon: '<path d="M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z" />',
+		iconFill:
+			'<path d="M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1,0-16h8V136a8,8,0,0,1,8-8H72a8,8,0,0,1,8,8v64H96V88a8,8,0,0,1,8-8h32a8,8,0,0,1,8,8V200h16V40a8,8,0,0,1,8-8h40a8,8,0,0,1,8,8V200h8A8,8,0,0,1,232,208Z" />',
+	},
+];
+const isActive = (href: string) =>
+	href === '/' ? pathname === '/' : pathname.startsWith(href);
+---
+
+<nav
+	id="bottom-nav"
+	aria-label="Navegación principal (móvil)"
+	class="glass-nav fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-20 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl lg:hidden"
+>
+	<span id="bottom-nav-pill" class="bottom-nav-pill" aria-hidden="true"></span>
+	<ul class="relative flex h-[3.75rem] items-stretch px-1">
+		{
+			links.map((l) => (
+				<li class="flex flex-1">
+					<a
+						href={l.href}
+						aria-current={isActive(l.href) ? 'page' : undefined}
+						class={
+							'flex w-full flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] leading-none transition-colors ' +
+							(isActive(l.href)
+								? 'font-bold text-white'
+								: 'font-medium text-white/80 hover:text-white')
+						}
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="20"
+							height="20"
+							class="h-5 w-5"
+							viewBox="0 0 256 256"
+							aria-hidden="true"
+							fill="currentColor"
+							set:html={isActive(l.href) ? l.iconFill : l.icon}
+						/>
+						<span>{l.label}</span>
+					</a>
+				</li>
+			))
+		}
+	</ul>
+</nav>
+
+<script>
+	const nav = document.getElementById('bottom-nav');
+	const pill = document.getElementById('bottom-nav-pill');
+
+	if (nav && pill) {
+		// Gradient visible on each side of the active label, the bar's inner
+		// padding (matches the ul's px-1) and the minimum gap to a neighbour.
+		const PAD = 8;
+		const EDGE = 4;
+		const NEIGHBOUR = 4;
+
+		// The bloom only plays when we arrived by tapping a tab, never on a
+		// plain load / reload / pull-to-refresh.
+		const SESSION_KEY = 'lle-nav-tap';
+		let fromTap = false;
+		try {
+			fromTap = sessionStorage.getItem(SESSION_KEY) === '1';
+			sessionStorage.removeItem(SESSION_KEY);
+		} catch {
+			fromTap = false;
+		}
+
+		const place = () => {
+			const active = nav.querySelector<HTMLAnchorElement>('a[aria-current="page"]');
+			const label = active?.querySelector('span');
+			const item = active?.closest('li');
+			if (!active || !label || !item) return;
+
+			const navRect = nav.getBoundingClientRect();
+			const itemRect = active.getBoundingClientRect();
+			const textRect = label.getBoundingClientRect();
+
+			const siblings = [...(item.parentElement?.children ?? [])];
+			const index = siblings.indexOf(item);
+			const prev = siblings[index - 1]?.querySelector('span')?.getBoundingClientRect();
+			const next = siblings[index + 1]?.querySelector('span')?.getBoundingClientRect();
+
+			// Furthest the pill may reach without touching a neighbour or the bar edge.
+			const minLeft = Math.max(navRect.left + EDGE, prev ? prev.right + NEIGHBOUR : -Infinity);
+			const maxRight = Math.min(navRect.right - EDGE, next ? next.left - NEIGHBOUR : Infinity);
+
+			// Short labels keep the slot width; long ones ("Clasificación") grow
+			// symmetrically by PAD, or by whatever room is left, never under 2px.
+			const slotPad = Math.max(0, (itemRect.width - textRect.width) / 2);
+			const pad = Math.max(
+				slotPad,
+				Math.min(PAD, textRect.left - minLeft, maxRight - textRect.right),
+				2
+			);
+
+			pill.style.width = `${textRect.width + pad * 2}px`;
+			pill.style.transform = `translateX(${textRect.left - pad - navRect.left}px)`;
+			nav.classList.add('is-ready');
+			if (fromTap) pill.classList.add('pill-grow');
+		};
+
+		// Flag the next page load as coming from a real tab tap. Adding a class
+		// is idempotent, so re-placing on resize never replays the animation.
+		nav.addEventListener('click', (event) => {
+			if (event instanceof MouseEvent && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+				return;
+			}
+			if (!(event.target instanceof Element)) return;
+			const link = event.target.closest<HTMLAnchorElement>('a[href]');
+			if (!link || link.getAttribute('aria-current') === 'page') return;
+			try {
+				sessionStorage.setItem(SESSION_KEY, '1');
+			} catch {
+				/* storage unavailable: just skip the bloom */
+			}
+		});
+
+		place();
+		window.addEventListener('resize', place);
+		window.addEventListener('orientationchange', place);
+		window.addEventListener('pageshow', place);
+		if (document.fonts?.ready) void document.fonts.ready.then(place);
+	}
+</script>

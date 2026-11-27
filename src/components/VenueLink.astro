@@ -1,0 +1,48 @@
+---
+interface Props {
+	name: string | null;
+	short: string | null;
+	mapsUrl: string | null;
+	class?: string;
+}
+
+const { name, short, mapsUrl, class: cls = '' } = Astro.props;
+const shortLabel = short ?? name;
+const isTbd = !mapsUrl;
+---
+
+{
+	name && (
+		<>
+			{mapsUrl ? (
+				<a href={mapsUrl} target="_blank" rel="noreferrer" title={name} class={cls}>
+					<span class="hidden sm:inline">{name}</span>
+					<span class="sm:hidden">{shortLabel}</span>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.25"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						class="ml-1 inline-block h-3.5 w-3.5 align-[-2px]"
+						aria-hidden="true"
+					>
+						<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0L3 19.382V6.618a1 1 0 0 1 .553-.894l4.553-2.477a2 2 0 0 1 1.788 0z" />
+						<path d="M15 5.764v15" />
+						<path d="M9 3.236v15" />
+					</svg>
+				</a>
+			) : (
+				<span
+					title={name}
+					class:list={[cls, isTbd && 'font-display italic']}
+				>
+					<span class="hidden sm:inline">{name}</span>
+					<span class="sm:hidden">{shortLabel}</span>
+				</span>
+			)}
+		</>
+	)
+}

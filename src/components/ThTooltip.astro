@@ -1,0 +1,25 @@
+---
+import { headerTips } from '../lib/format';
+
+interface Props {
+	label: string;
+}
+
+const { label } = Astro.props;
+const tip = headerTips[label];
+---
+
+{
+	tip ? (
+		<span
+			data-tip={tip}
+			tabindex="0"
+			aria-label={tip}
+			class="inline-flex items-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#641B24]/30"
+		>
+			{label}
+		</span>
+	) : (
+		<span>{label}</span>
+	)
+}

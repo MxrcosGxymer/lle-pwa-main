@@ -1,0 +1,188 @@
+---
+import Layout from '../layouts/Layout.astro';
+import MatchGrid from '../components/MatchGrid.astro';
+import JornadaPicker from '../components/JornadaPicker.astro';
+import type { MatchRow } from '../lib/db';
+import { getAllMatches, getSpecialDates } from '../lib/db';
+import { formatDate } from '../lib/format';
+import { nextSectionIndex, todayISO } from '../lib/calendario';
+import type { PickerSection } from '../lib/calendario';
+
+const matches = await getAllMatches();
+const specialDates = await getSpecialDates();
+const rainDates = new Set(
+	specialDates.filter((s) => s.type === 'lluvia').map((s) => s.date),
+);
+
+interface Section extends PickerSection {
+	key: string;
+	matches: MatchRow[];
+}
+
+const byWeek = new Map<number, MatchRow[]>();
+const byPostponedDate = new Map<string, MatchRow[]>();
+
+for (const m of matches) {
+	if (m.original_date && m.original_date !== m.date && rainDates.has(m.date)) {
+		const list = byPostponedDate.get(m.date) ?? [];
+		list.push(m);
+		byPostponedDate.set(m.date, list);
+	} else {
+		const list = byWeek.get(m.week) ?? [];
+		list.push(m);
+		byWeek.set(m.week, list);
+	}
+}
+
+const sections: Section[] = [];
+
+for (const [week, weekMatches] of byWeek) {
+	const dates = weekMatches.map((m) => m.date);
+	const date = dates.reduce((a, b) => (a < b ? a : b));
+	sections.push({
+		key: `week-${week}`,
+		id: `jornada-${week}`,
+		short: `J${week}`,
+		title: `Jornada ${week}`,
+		date,
+		lastDate: dates.reduce((a, b) => (a > b ? a : b)),
+		// The bar is the only sticky header, so its label carries the full
+		// name and date. The per-section headings that used to show them were
+		// redundant and have been dropped.
+		label: `Jornada ${week} · ${formatDate(date)}`,
+		matches: weekMatches,
+	});
+}
+
+for (const [date, postponed] of byPostponedDate) {
+	sections.push({
+		key: `aplazada-${date}`,
+		id: `aplazada-${date}`,
+		short: 'JA',
+		title: 'Jornada aplazada',
+		date,
+		lastDate: date,
+		// "Jornada aplazada" is too long next to "CALENDARIO" at 390px;
+		// "Aplazada" still says what the section is.
+		label: `Aplazada · ${formatDate(date)}`,
+		matches: postponed,
+	});
+}
+
+sections.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+const nextIndex = nextSectionIndex(sections, todayISO());
+const initial = nextIndex >= 0 ? sections[nextIndex] : undefined;
+---
+
+<Layout
+	title="Calendario · Liga Elche Baloncesto"
+	description="Calendario y resultados de todas las jornadas de la Liga Elche Baloncesto."
+>
+	{
+		sections.length === 0 ? (
+			<div class="mx-auto max-w-5xl px-4 pb-6">
+				<h1 class="pt-4 font-display text-2xl tracking-wide">Calendario</h1>
+				<div class="mt-6 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+					Aún no hay partidos registrados
+				</div>
+			</div>
+		) : (
+			<>
+				{/*
+					The bar is full-bleed (outside the max-w container) so its
+					background and fade band reach the viewport edges; the
+					content inside keeps the page's max width and gutters. The
+					separator is inset 8px from the edges.
+
+					It is the page's only sticky header: the jornada name and
+					date live in the picker at the end of the bar, so per-section
+					headings would only repeat them.
+
+					z-[15]: above the card internals that carry their own z-index
+					(the venue link and the result tooltip use z-10), below the
+					sticky Nav (z-20) and the portalled dropdown (z-50).
+				*/}
+				<div
+					class="cal-bar sticky top-[var(--cal-nav-h,3.25rem)] z-[15] bg-gray-100"
+					data-cal-bar
+				>
+					<div class="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 pt-4 pb-3">
+						<h1 class="shrink-0 font-display text-2xl tracking-wide">Calendario</h1>
+						<JornadaPicker sections={sections} initialId={initial?.id ?? ''} />
+					</div>
+				</div>
+
+				<div class="mx-auto max-w-5xl px-4 pb-6">
+					<div class="mt-8 space-y-12">
+						{sections.map((section) => (
+							<section
+								id={section.id}
+								data-section
+								data-last-date={section.lastDate}
+								class="cal-section"
+							>
+								<MatchGrid matches={section.matches} />
+							</section>
+						))}
+					</div>
+				</div>
+			</>
+		)
+	}
+</Layout>
+
+<style>
+	/*
+	 * The bar is the page's only sticky header. Its bottom edge carries the
+	 * horizontal separator, and the fade band hangs below it so content
+	 * dissolves as it scrolls under the bar. Height comes from `--cal-fade-h`
+	 * (calendario.ts), which also drives the jump offset and the scroll-spy
+	 * line, so the three cannot drift apart.
+	 *
+	 * The separator is its own pseudo-element so it can be inset 8px from the
+	 * viewport edges; a `border-top` on the fade band would run full-bleed.
+	 */
+	.cal-bar::before {
+		content: '';
+		position: absolute;
+		inset-inline: 8px;
+		bottom: 0;
+		height: 1px;
+		background-color: var(--color-gray-200, #e5e7eb);
+		pointer-events: none;
+	}
+
+	.cal-bar::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		top: 100%;
+		height: var(--cal-fade-h, 2rem);
+		pointer-events: none;
+		background-image: linear-gradient(
+			to bottom,
+			rgb(243 244 246) 0%,
+			rgb(243 244 246 / 0.93) 12%,
+			rgb(243 244 246 / 0.78) 28%,
+			rgb(243 244 246 / 0.55) 46%,
+			rgb(243 244 246 / 0.32) 64%,
+			rgb(243 244 246 / 0.14) 82%,
+			rgb(243 244 246 / 0) 100%
+		);
+	}
+
+	/*
+	 * Scroll targets land below the fade band, so a rested card is never dimmed.
+	 */
+	.cal-section {
+		scroll-margin-top: calc(
+			var(--cal-nav-h, 3.25rem) + var(--cal-bar-h, 3.75rem) + var(--cal-fade-h, 2rem)
+		);
+	}
+</style>
+
+<script>
+	import '../lib/team-names';
+	import '../lib/calendario';
+</script>

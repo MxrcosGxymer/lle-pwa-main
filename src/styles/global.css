@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+html {
+	background-color: #641B24;
+}
+
+@font-face {
+	font-family: "Bebas Neue";
+	src: url("/fonts/BebasNeue-Regular.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@theme {
+	--font-display: "Bebas Neue", "Arial Narrow", sans-serif;
+}
+
+@keyframes row-in {
+	from { opacity: 0; transform: translateY(-4px); }
+	to   { opacity: 1; transform: none; }
+}
+
+[data-animate-rows] tbody tr {
+	animation: row-in 0.35s ease both;
+}
+
+th[data-sort] {
+	user-select: none;
+}
+th[data-sort]::after {
+	content: '';
+}
+th[data-sort].sorted-desc::after {
+	content: ' ↑';
+}
+th[data-sort].sorted-asc::after {
+	content: ' ↓';
+}
+
+/*
+ * Tooltip for table headers, portalled to <body> by src/lib/th-tooltip.ts so it
+ * is never clipped by the tables' overflow-x containers. Sits above the header
+ * (it only flips below when there is no room on screen).
+ */
+.th-tip {
+	position: fixed;
+	z-index: 60;
+	max-width: min(16rem, calc(100vw - 1rem));
+	transform: translateX(-50%);
+	border-radius: 0.25rem;
+	background-color: var(--color-gray-900, #111827);
+	padding: 0.25rem 0.5rem;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.25;
+	color: #fff;
+	white-space: nowrap;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+.th-tip[data-visible='true'] {
+	opacity: 1;
+}
+.th-tip::after {
+	content: '';
+	position: absolute;
+	left: var(--tip-arrow-x, 50%);
+	width: 0;
+	height: 0;
+	border: 4px solid transparent;
+	transform: translateX(-50%);
+}
+.th-tip[data-placement='above']::after {
+	top: 100%;
+	border-top-color: var(--color-gray-900, #111827);
+}
+.th-tip[data-placement='below']::after {
+	bottom: 100%;
+	border-bottom-color: var(--color-gray-900, #111827);
+}
+
+/* Pull-to-refresh (mobile PWA only, see src/lib/pull-to-refresh.ts) */
+.pwa-standalone {
+	overscroll-behavior-y: contain;
+}
+
+/*
+ * The indicator sits below the header (z-20), hidden behind it at progress 0,
+ * and travels down to a third of the viewport height (--ptr-travel) as you pull.
+ */
+.ptr-indicator {
+	position: fixed;
+	top: var(--ptr-top, 0px);
+	left: 50%;
+	z-index: 10;
+	width: 28px;
+	height: 28px;
+	transform: translate(
+		-50%,
+		calc(-28px + var(--ptr-progress, 0) * var(--ptr-travel, 0px))
+	);
+	opacity: min(1, calc(var(--ptr-progress, 0) * 3));
+	transition:
+		opacity 0.25s ease,
+		transform 0.25s ease;
+	pointer-events: none;
+}
+
+.ptr-indicator.ptr-dragging {
+	transition: none;
+}
+
+.ptr-spinner {
+	display: block;
+	width: 28px;
+	height: 28px;
+	color: #641b24;
+	transform: rotate(calc(var(--ptr-progress, 0) * 270deg));
+	transition: transform 0.25s ease;
+}
+
+.ptr-indicator.ptr-dragging .ptr-spinner {
+	transition: none;
+}
+
+.ptr-indicator.refreshing .ptr-spinner {
+	animation: ptr-spin 0.7s linear infinite;
+}
+
+@keyframes ptr-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ptr-indicator,
+	.ptr-spinner {
+		transition: none;
+	}
+}
+
+/*
+ * Floating "glass" capsule for the mobile bottom nav. Kept in the global
+ * stylesheet (instead of a scoped <style> in BottomNav.astro) so the page has
+ * a single CSS delivery path and no second inline sheet at first paint.
+ */
+.glass-nav {
+	background-color: rgb(20 46 93 / 0.52);
+	-webkit-backdrop-filter: blur(6px) saturate(130%);
+	backdrop-filter: blur(6px) saturate(130%);
+	box-shadow:
+		inset 0 1px 0 rgb(255 255 255 / 0.18),
+		inset 0 0 0 1px rgb(255 255 255 / 0.08),
+		0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+/* Keeps the 10px labels readable when the tint is lightened over pale pages. */
+#bottom-nav a {
+	text-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+
+/* iOS-style continuous corners where the browser supports them (Chrome 139+,
+   Safari 27.3+); everyone else keeps the plain border-radius. */
+@supports (corner-shape: squircle) {
+	.glass-nav,
+	.bottom-nav-pill {
+		corner-shape: squircle;
+	}
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+	.glass-nav {
+		background-color: #1c2f56;
+	}
+}
+
+@media (prefers-reduced-transparency: reduce) {
+	.glass-nav {
+		background-color: #1c2f56;
+	}
+}
+
+.bottom-nav-pill {
+	position: absolute;
+	top: 4px;
+	bottom: 4px;
+	left: 0;
+	width: 0;
+	border-radius: 12px;
+	background-image: linear-gradient(
+		to bottom right,
+		#641b24 0%,
+		#3d2340 50%,
+		#142e5d 100%
+	);
+	box-shadow:
+		inset 0 1px 0 rgb(255 255 255 / 0.18),
+		0 1px 3px rgb(0 0 0 / 0.25);
+	/* Hidden until JS has measured the active tab (avoids a 0-width flash). */
+	opacity: 0;
+	pointer-events: none;
+}
+
+#bottom-nav.is-ready .bottom-nav-pill {
+	opacity: 1;
+}
+
+/*
+ * Centre-out bloom on arrival. Because this is an MPA the pill can never
+ * travel between tabs, so it opens from the middle of the selected tab
+ * instead. The negative end inset keeps the pill's drop shadow unclipped.
+ * Two animations run together: the clip-path grow (decelerating) and an
+ * opacity fade, which uses ease-in as requested.
+ */
+#bottom-nav .bottom-nav-pill.pill-grow {
+	animation:
+		bottom-nav-grow 380ms cubic-bezier(0.22, 1, 0.36, 1) both,
+		bottom-nav-fade 320ms ease-in both;
+}
+
+@keyframes bottom-nav-grow {
+	from {
+		clip-path: inset(0 50% 0 50%);
+	}
+	to {
+		clip-path: inset(-12px);
+	}
+}
+
+@keyframes bottom-nav-fade {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#bottom-nav .bottom-nav-pill.pill-grow {
+		animation: none;
+	}
+}
