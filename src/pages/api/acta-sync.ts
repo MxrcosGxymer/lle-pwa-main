@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getActaSyncSecret, getDb } from '../../lib/runtime';
-import { getAdminMatch, getTeamPlayers, recomputeStandings } from '../../lib/db';
+import { clearResultStatements, getAdminMatch, getTeamPlayers, recomputeStandings } from '../../lib/db';
 
 export const prerender = false;
 
@@ -31,7 +31,7 @@ interface ActaSyncPayload {
 	week?: number | null;
 	homeTeam?: string;
 	awayTeam?: string;
-	mode: 'live' | 'final';
+	mode: 'live' | 'final' | 'reset';
 	actaGameId?: string;
 	homeScore: number;
 	awayScore: number;
@@ -320,5 +320,26 @@ export const POST: APIRoute = async ({ request }) => {
 		return json({ ok: true, mode: 'final', matchId, homeScore, awayScore });
 	}
 
-	return json({ error: 'mode inválido (usa live o final)' }, 400);
+	if (body.mode === 'reset') {
+		const statements = [
+			...clearResultStatements(matchId),
+			getDb()
+				.prepare(
+					`UPDATE matches SET
+						status = 'scheduled',
+						forfeit_team_id = NULL,
+						observations = NULL,
+						pbp_json = NULL
+					 WHERE id = ?`,
+				)
+				.bind(matchId),
+			getDb().prepare('DELETE FROM live_matches WHERE match_id = ?').bind(matchId),
+		];
+		await getDb().batch(statements);
+		await recomputeStandings();
+
+		return json({ ok: true, mode: 'reset', matchId });
+	}
+
+	return json({ error: 'mode inválido (usa live, final o reset)' }, 400);
 };
