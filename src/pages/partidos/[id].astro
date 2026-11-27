@@ -203,12 +203,18 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 							/>
 						</a>
 					</div>
-					<div id="hero-score-wrap">
-						<ScoreBadge
-							home={live ? live.home_score : match.home_score}
-							away={live ? live.away_score : match.away_score}
-							variant="hero"
-						/>
+					<div id="hero-score-wrap" class="shrink-0">
+						{live ? (
+							<span class="inline-flex shrink-0 items-center rounded-lg bg-gray-900 px-3 py-1.5 font-display text-2xl tracking-wider tabular-nums text-white ring-2 ring-red-500/70 sm:rounded-xl sm:px-6 sm:py-2.5 sm:text-4xl">
+								{`${live.home_score} – ${live.away_score}`}
+							</span>
+						) : (
+							<ScoreBadge
+								home={match.home_score}
+								away={match.away_score}
+								variant="hero"
+							/>
+						)}
 					</div>
 					<div class="flex min-w-0 flex-1 items-center justify-end gap-2 sm:justify-between">
 						<a href={`/equipos/${match.away_id}`} class="hidden sm:inline-flex">
@@ -600,11 +606,7 @@ const nameClasses = (outcome: TeamOutcome | null, align: '' | 'text-right') => {
 				emptyBanner?.classList.add('hidden');
 
 				if (heroWrap) {
-					const nums = heroWrap.querySelectorAll('span');
-					if (nums.length >= 2) {
-						nums[0].textContent = String(data.home_score ?? 0);
-						nums[nums.length - 1].textContent = String(data.away_score ?? 0);
-					}
+					heroWrap.innerHTML = `<span class="inline-flex shrink-0 items-center rounded-lg bg-gray-900 px-3 py-1.5 font-display text-2xl tracking-wider tabular-nums text-white ring-2 ring-red-500/70 sm:rounded-xl sm:px-6 sm:py-2.5 sm:text-4xl">${data.home_score ?? 0} – ${data.away_score ?? 0}</span>`;
 				}
 				if (periodEl) {
 					periodEl.textContent = data.period > 4 ? `PR${data.period - 4}` : `Q${data.period || 1}`;
