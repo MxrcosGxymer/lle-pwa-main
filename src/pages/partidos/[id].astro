@@ -40,9 +40,16 @@ interface PbpEvent {
 	clk?: string;
 	icon?: string;
 	desc?: string;
+	score?: string;
 	txt?: string;
 	text?: string;
 	time?: string;
+}
+
+interface LiveStatsMeta {
+	teamFouls?: { home: number; away: number };
+	timeouts?: { home: number; away: number; max: number };
+	onCourt?: { home: number[]; away: number[] };
 }
 
 const rawId = Number(Astro.params.id);
@@ -61,8 +68,11 @@ const isLive = Boolean(live);
 const isFinished = match?.status === 'finished' || match?.status === 'forfeit';
 
 // Unified stats (live or finished) for Resumen (Jugador destacado) and Tiros
-const liveStats: { home: LivePlayerStat[]; away: LivePlayerStat[] } | null =
+const liveStats: { home: LivePlayerStat[]; away: LivePlayerStat[]; meta?: LiveStatsMeta } | null =
 	live?.stats_json ? JSON.parse(live.stats_json) : null;
+const liveMeta = liveStats?.meta ?? null;
+const onCourtHome = new Set((liveMeta?.onCourt?.home ?? []).map(Number));
+const onCourtAway = new Set((liveMeta?.onCourt?.away ?? []).map(Number));
 
 const homeRows = rows.filter((r) => r.team_id === match?.home_id);
 const awayRows = rows.filter((r) => r.team_id === match?.away_id);
@@ -386,6 +396,49 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 					</div>
 				)}
 
+				{match.status === 'scheduled' && (
+					<div
+						id="live-meta-bar"
+						class:list={[
+							'mt-2 grid grid-cols-2 gap-2 text-xs',
+							(!live || !liveMeta) && 'hidden',
+						]}
+					>
+						{[
+							{
+								name: match.home_short,
+								fouls: liveMeta?.teamFouls?.home ?? 0,
+								to: liveMeta?.timeouts?.home ?? 0,
+								toMax: liveMeta?.timeouts?.max ?? 2,
+							},
+							{
+								name: match.away_short,
+								fouls: liveMeta?.teamFouls?.away ?? 0,
+								to: liveMeta?.timeouts?.away ?? 0,
+								toMax: liveMeta?.timeouts?.max ?? 2,
+							},
+						].map((side) => (
+							<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-xs">
+								<span class="font-semibold text-gray-800">{side.name}</span>
+								<div class="flex items-center gap-2">
+									<span class="text-gray-600">
+										Faltas: <strong class="tabular-nums text-gray-900">{side.fouls}/5</strong>
+									</span>
+									{side.fouls >= 5 && (
+										<span class="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+											BONUS
+										</span>
+									)}
+									<span class="text-gray-400">·</span>
+									<span class="text-gray-600">
+										TM: <strong class="tabular-nums text-gray-900">{side.to}/{side.toMax}</strong>
+									</span>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+
 				{/* Empty state for scheduled matches not yet started */}
 				{!hasMatchContent && (
 					<div
@@ -701,20 +754,28 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 						>
 							{liveStats ? (
 								[
-									{ teamId: match.home_id, teamName: match.home_team, list: unifiedHomePlayers },
-									{ teamId: match.away_id, teamName: match.away_team, list: unifiedAwayPlayers },
-								].map(({ teamId, teamName, list }) => {
+									{ teamId: match.home_id, teamName: match.home_team, list: unifiedHomePlayers, onCourt: onCourtHome },
+									{ teamId: match.away_id, teamName: match.away_team, list: unifiedAwayPlayers, onCourt: onCourtAway },
+								].map(({ teamId, teamName, list, onCourt }) => {
 									const t = liveTotals(list);
 									return (
 										<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-											<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">
-												<a
-													href={`/equipos/${teamId}`}
-													class="transition hover:text-[#79131f] hover:underline"
-												>
-													{teamName}
-												</a>
-											</h2>
+											<div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
+												<h2 class="font-semibold">
+													<a
+														href={`/equipos/${teamId}`}
+														class="transition hover:text-[#79131f] hover:underline"
+													>
+														{teamName}
+													</a>
+												</h2>
+												{onCourt.size > 0 && (
+													<span class="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+														<span class="h-2 w-2 rounded-full bg-emerald-500" />
+														En pista
+													</span>
+												)}
+											</div>
 											<div class="overflow-x-auto">
 												<table class="w-full text-sm">
 													<thead>
@@ -732,6 +793,12 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 														{list.map((p) => (
 															<tr class="border-b border-gray-100 last:border-0">
 																<td class="px-3 py-2 font-medium">
+																	{onCourt.has(Number(p.number)) && (
+																		<span
+																			title="En pista"
+																			class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle"
+																		/>
+																	)}
 																	<span class="mr-1 font-mono text-xs text-gray-400">
 																		#{p.number}
 																	</span>
@@ -899,15 +966,39 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 					{/* TAB 3: JUGADAS (Últimas jugadas / Play-by-play) */}
 					<div id="tab-jugadas" data-tab-panel="jugadas" class="mt-4 hidden">
 						<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-							<div class="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+							<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2.5">
 								<h2 class="text-xs font-semibold tracking-wide text-gray-600 uppercase">
 									Últimas jugadas
 								</h2>
+								<div class="flex flex-wrap gap-1" role="group" aria-label="Filtrar jugadas">
+									{[
+										{ id: 'all', label: 'Todas' },
+										{ id: 'score', label: 'Canastas' },
+										{ id: 'foul', label: 'Faltas' },
+										{ id: 'sub', label: 'Cambios' },
+									].map((f, idx) => (
+										<button
+											type="button"
+											data-pbp-filter={f.id}
+											class:list={[
+												'pbp-filter-btn rounded-full px-2.5 py-0.5 text-xs font-semibold transition',
+												idx === 0
+													? 'bg-[#641B24] text-white'
+													: 'bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100',
+											]}
+										>
+											{f.label}
+										</button>
+									))}
+								</div>
 							</div>
 							<div id="jugadas-list" class="divide-y divide-gray-100">
 								{initialPbp.length > 0 ? (
 									initialPbp.map((ev) => (
-										<div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+										<div
+											data-pbp-type={ev.type || 'OTHER'}
+											class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+										>
 											<div class="flex min-w-0 items-center gap-2.5">
 												<span class="shrink-0 text-base">{ev.icon || '•'}</span>
 												<div class="min-w-0">
@@ -926,6 +1017,11 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 												</div>
 											</div>
 											<div class="flex shrink-0 items-center gap-1.5 font-mono text-xs text-gray-500">
+												{ev.score && (
+													<span class="rounded bg-gray-900 px-1.5 py-0.5 font-semibold text-white">
+														{ev.score}
+													</span>
+												)}
 												{ev.per != null && (
 													<span class="rounded bg-gray-100 px-1.5 py-0.5 font-semibold text-gray-700">
 														{ev.per > 4 ? `PR${ev.per - 4}` : `Q${ev.per}`}
@@ -998,14 +1094,50 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 		});
 	});
 
+	// Play-by-play filter (Todas / Canastas / Faltas / Cambios)
+	let activePbpFilter = 'all';
+	const pbpFilterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pbp-filter]'));
+
+	const matchesPbpFilter = (type: string, filter: string) => {
+		if (filter === 'all') return true;
+		if (filter === 'score') return type === 'PT' || type === 'MISS';
+		if (filter === 'foul') return type === 'FOUL';
+		if (filter === 'sub') return type === 'SUB';
+		return true;
+	};
+
+	const applyPbpFilter = () => {
+		const items = document.querySelectorAll<HTMLElement>('#jugadas-list [data-pbp-type]');
+		items.forEach((el) => {
+			const t = el.dataset.pbpType || 'OTHER';
+			el.classList.toggle('hidden', !matchesPbpFilter(t, activePbpFilter));
+		});
+	};
+
+	pbpFilterButtons.forEach((btn) => {
+		btn.addEventListener('click', () => {
+			activePbpFilter = btn.dataset.pbpFilter || 'all';
+			pbpFilterButtons.forEach((b) => {
+				const on = (b.dataset.pbpFilter || 'all') === activePbpFilter;
+				b.className = on
+					? 'pbp-filter-btn rounded-full bg-[#641B24] px-2.5 py-0.5 text-xs font-semibold text-white transition'
+					: 'pbp-filter-btn rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-gray-600 ring-1 ring-gray-200 transition hover:bg-gray-100';
+			});
+			applyPbpFilter();
+		});
+	});
+
 	// Live polling for scheduled matches (updates Hero + Resumen + Tiros + Jugadas without changing active tab)
 	const root = document.getElementById('match-page-root') as HTMLElement | null;
 	if (root && root.dataset.matchStatus === 'scheduled') {
 		const matchId = root.dataset.matchId;
 		const homeName = root.dataset.homeName || 'Local';
 		const awayName = root.dataset.awayName || 'Visitante';
+		const homeShort = root.dataset.homeShort || homeName;
+		const awayShort = root.dataset.awayShort || awayName;
 		const heroWrap = document.getElementById('hero-score-wrap');
 		const liveBanner = document.getElementById('live-banner');
+		const liveMetaBar = document.getElementById('live-meta-bar');
 		const emptyBanner = document.getElementById('empty-stats-banner');
 		const tabsShell = document.getElementById('match-tabs-shell');
 		const periodEl = document.getElementById('live-period');
@@ -1098,8 +1230,9 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 			</div>`;
 		};
 
-		const renderTeamTable = (title: string, list: any[]) => {
+		const renderTeamTable = (title: string, list: any[], onCourtNums: number[] = []) => {
 			if (!list || !list.length) return '';
+			const onSet = new Set(onCourtNums.map(Number));
 			const totals = list.reduce(
 				(acc, p) => ({
 					points: acc.points + (p.points || 0),
@@ -1114,7 +1247,7 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 			const rowsHtml = list
 				.map(
 					(p) => `<tr class="border-b border-gray-100 last:border-0">
-						<td class="px-3 py-2 text-left text-sm font-medium"><span class="mr-1 font-mono text-xs text-gray-400">#${esc(p.number)}</span>${esc(p.name)}</td>
+						<td class="px-3 py-2 text-left text-sm font-medium">${onSet.has(Number(p.number)) ? '<span title="En pista" class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle"></span>' : ''}<span class="mr-1 font-mono text-xs text-gray-400">#${esc(p.number)}</span>${esc(p.name)}</td>
 						<td class="px-2.5 py-2 text-right font-semibold tabular-nums">${p.points ?? 0}</td>
 						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.fg2 ?? 0}</td>
 						<td class="px-2.5 py-2 text-right tabular-nums text-gray-600">${p.fg3 ?? 0}</td>
@@ -1125,7 +1258,10 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 				)
 				.join('');
 			return `<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-				<h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 font-semibold">${esc(title)}</h2>
+				<div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
+					<h2 class="font-semibold">${esc(title)}</h2>
+					${onSet.size > 0 ? '<span class="inline-flex items-center gap-1 text-[11px] text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>En pista</span>' : ''}
+				</div>
 				<div class="overflow-x-auto"><table class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
@@ -1202,11 +1338,34 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 				if (data.players) {
 					const hList = data.players.home || [];
 					const aList = data.players.away || [];
+					const meta = data.players.meta || null;
+					if (liveMetaBar && meta) {
+						liveMetaBar.classList.remove('hidden');
+						const sides = [
+							{ name: homeShort, fouls: meta.teamFouls?.home ?? 0, to: meta.timeouts?.home ?? 0, toMax: meta.timeouts?.max ?? 2 },
+							{ name: awayShort, fouls: meta.teamFouls?.away ?? 0, to: meta.timeouts?.away ?? 0, toMax: meta.timeouts?.max ?? 2 },
+						];
+						liveMetaBar.innerHTML = sides
+							.map(
+								(s) => `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-xs">
+									<span class="font-semibold text-gray-800">${esc(s.name)}</span>
+									<div class="flex items-center gap-2">
+										<span class="text-gray-600">Faltas: <strong class="tabular-nums text-gray-900">${s.fouls}/5</strong></span>
+										${s.fouls >= 5 ? '<span class="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">BONUS</span>' : ''}
+										<span class="text-gray-400">·</span>
+										<span class="text-gray-600">TM: <strong class="tabular-nums text-gray-900">${s.to}/${s.toMax}</strong></span>
+									</div>
+								</div>`,
+							)
+							.join('');
+					}
 					if (resumenMvpEl) {
 						resumenMvpEl.innerHTML = renderMvp(hList, aList);
 					}
 					if (tirosBoxEl) {
-						tirosBoxEl.innerHTML = renderTeamTable(homeName, hList) + renderTeamTable(awayName, aList);
+						tirosBoxEl.innerHTML =
+							renderTeamTable(homeName, hList, meta?.onCourt?.home || []) +
+							renderTeamTable(awayName, aList, meta?.onCourt?.away || []);
 					}
 				}
 
@@ -1218,7 +1377,7 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 					} else {
 						jugadasListEl.innerHTML = plays
 							.map(
-								(ev: any) => `<div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+								(ev: any) => `<div data-pbp-type="${esc(ev.type || 'OTHER')}" class="flex items-center justify-between gap-3 px-4 py-3 text-sm ${matchesPbpFilter(ev.type || 'OTHER', activePbpFilter) ? '' : 'hidden'}">
 									<div class="flex min-w-0 items-center gap-2.5">
 										<span class="shrink-0 text-base">${esc(ev.icon || '•')}</span>
 										<div class="min-w-0">
@@ -1227,6 +1386,7 @@ const displayAwayScore = live ? live.away_score : match?.away_score ?? null;
 										</div>
 									</div>
 									<div class="flex shrink-0 items-center gap-1.5 font-mono text-xs text-gray-500">
+										${ev.score ? `<span class="rounded bg-gray-900 px-1.5 py-0.5 font-semibold text-white">${esc(ev.score)}</span>` : ''}
 										${ev.per != null ? `<span class="rounded bg-gray-100 px-1.5 py-0.5 font-semibold text-gray-700">${ev.per > 4 ? `PR${ev.per - 4}` : `Q${ev.per}`}</span>` : ''}
 										<span>${esc(ev.clk || ev.time || '')}</span>
 									</div>

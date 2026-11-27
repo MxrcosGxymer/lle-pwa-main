@@ -42,6 +42,7 @@ interface ActaSyncPayload {
 	players?: {
 		home?: ActaPlayerPayload[];
 		away?: ActaPlayerPayload[];
+		meta?: Record<string, unknown>;
 	};
 	pbp?: unknown[];
 	observations?: string | null;

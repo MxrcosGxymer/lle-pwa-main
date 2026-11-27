@@ -2,10 +2,10 @@
 import Layout from '../layouts/Layout.astro';
 import MatchGrid from '../components/MatchGrid.astro';
 import ThTooltip from '../components/ThTooltip.astro';
-import { getStandings, getLastPlayedWeek, getUpcomingWeek, getWeekMatches } from '../lib/db';
+import { getStandings, getLastPlayedWeek, getUpcomingWeek, getWeekMatches, getLiveMatches } from '../lib/db';
 import { formatDate } from '../lib/format';
 
-const lastPlayedWeek = await getLastPlayedWeek();
+const [liveMatches, lastPlayedWeek] = await Promise.all([getLiveMatches(), getLastPlayedWeek()]);
 const upcomingWeek = await getUpcomingWeek(lastPlayedWeek);
 const upcomingMatches = upcomingWeek !== null ? await getWeekMatches(upcomingWeek) : [];
 const lastPlayedMatches = lastPlayedWeek !== null ? await getWeekMatches(lastPlayedWeek) : [];
@@ -22,6 +22,46 @@ const hasSchedule = upcomingWeek !== null || lastPlayedWeek !== null;
 >
 	<div class="mx-auto max-w-5xl px-4 pt-4 pb-6">
 		<h1 class="sr-only">Liga Elche Baloncesto</h1>
+
+		{
+			liveMatches.length > 0 && (
+				<section class="mb-6 rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-white p-4 shadow-sm">
+					<div class="flex items-center justify-between gap-2">
+						<div class="flex items-center gap-2">
+							<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
+							<h2 class="font-display text-2xl tracking-wide text-red-700">EN DIRECTO AHORA</h2>
+						</div>
+						<span class="text-xs font-medium text-red-600">Pulsa para seguir en vivo →</span>
+					</div>
+					<div class="mt-3 grid gap-3 sm:grid-cols-2">
+						{liveMatches.map((m) => (
+							<a
+								href={`/partidos/${m.id}`}
+								class="flex items-center justify-between gap-3 rounded-xl border border-red-200/80 bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-red-400 hover:shadow-md"
+							>
+								<div class="min-w-0 flex-1">
+									<div class="flex items-center gap-2 text-[11px] font-semibold text-red-600 uppercase">
+										<span>Jornada {m.week}</span>
+										<span>·</span>
+										<span>
+											{m.live_period && m.live_period > 4
+												? `PR${m.live_period - 4}`
+												: `Q${m.live_period ?? 1}`}
+										</span>
+									</div>
+									<p class="mt-0.5 truncate text-sm font-semibold text-gray-900">
+										{m.home_short} <span class="font-normal text-gray-400">vs</span> {m.away_short}
+									</p>
+								</div>
+								<span class="shrink-0 rounded-lg bg-gray-900 px-3 py-1 font-display text-xl tracking-wider tabular-nums text-white ring-2 ring-red-500/60">
+									{m.live_home_score ?? 0} – {m.live_away_score ?? 0}
+								</span>
+							</a>
+						))}
+					</div>
+				</section>
+			)
+		}
 
 		{
 			lastPlayedWeek !== null && (

@@ -182,6 +182,13 @@ export async function getLiveMatch(matchId: number): Promise<LiveMatchRow | null
 	return row;
 }
 
+export function getLiveMatches(): Promise<MatchRow[]> {
+	return matchesQuery(
+		"WHERE lm.match_id IS NOT NULL AND m.status = 'scheduled'",
+		'ORDER BY lm.updated_at DESC',
+	);
+}
+
 export function getWeekMatches(week: number): Promise<MatchRow[]> {
 	return matchesQuery(
 		'WHERE m.week = ?',
