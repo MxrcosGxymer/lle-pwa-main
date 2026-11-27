@@ -1,9 +1,9 @@
-const VERSION = 'lle-v5';
+const VERSION = 'lle-v6';
 const ASSET_CACHE = `assets-${VERSION}`;
 const PAGE_CACHE = `pages-${VERSION}`;
 const CORE_ASSETS = [
 	'/',
-	'/offline',
+	'/offline.html',
 	'/manifest.webmanifest',
 	'/favicon.svg',
 	'/icon-512.png',
@@ -60,7 +60,7 @@ self.addEventListener('fetch', (event) => {
 					caches.match(request).then((cached) =>
 						cached ||
 						caches.match('/').then((home) =>
-							home || caches.match('/offline'),
+							home || caches.match('/offline.html'),
 						),
 					),
 				),
