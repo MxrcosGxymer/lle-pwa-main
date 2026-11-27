@@ -1,4 +1,4 @@
-import { createClient, type Client, type InValue } from '@libsql/client';
+import { createClient, type Client, type InValue } from '@libsql/client/web';
 import { list, put } from '@vercel/blob';
 import type { MediaObject, MediaStorage, SqlDatabase, SqlStatement } from './runtime-types';
 
